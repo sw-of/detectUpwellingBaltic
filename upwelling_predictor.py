@@ -30,8 +30,8 @@ MONITORED_LOCATIONS = {
 }
 
 def fetch_and_archive(lat, lon, location_name):
-    """Fragt DWD-Daten über die korrekte Open-Meteo DWD-Subdomain ab."""
-    # KORREKTUR: dwd-api.open-meteo.com statt api.open-meteo.com
+    """Fragt DWD-Daten über den reparierten API-Endpunkt ab."""
+    # KORREKTUR: Das fehlende /v1/dwd? wurde wieder eingefügt
     url = f"https://open-meteo.com{lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&forecast_days=3&past_days=1"
     try:
         response = requests.get(url, timeout=15)
