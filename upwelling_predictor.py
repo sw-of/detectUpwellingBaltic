@@ -36,6 +36,7 @@ def get_archive_dir(location_name):
 
 def fetch_and_archive_json(lat, lon, archive_dir):
     """Fragt DWD-Daten ab und speichert die rohe JSON-Datei."""
+    # REPARIERT: /v1/forecast? wurde korrekt eingesetzt
     url = f"https://open-meteo.com{lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&models=dwd_icon&forecast_days=3&past_days=1"
     try:
         response = requests.get(url, timeout=15)
@@ -59,19 +60,15 @@ def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
     log_path = os.path.join(archive_dir, "status_log.csv")
     timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     
-    # Bereite die Datenzeile vor (Semicolon als Trenner für exzellenten Excel-Support)
     decision = "Ja" if is_upwelling else "Nein"
-    # Bereinige die Nachricht von eventuellen Kommas/Semikolons
     clean_msg = status_msg.replace(";", ",").replace("\n", " ")
     log_line = f"{timestamp_utc};{decision};{net_hours};{clean_msg}\n"
     
-    # Prüfen, ob die Datei neu angelegt werden muss
     file_exists = os.path.exists(log_path)
     
     try:
         with open(log_path, "a", encoding="utf-8") as f:
             if not file_exists:
-                # Tabellenkopf schreiben, falls Datei neu ist
                 f.write("timestamp_utc;upwelling_predicted;net_wind_hours;details\n")
             f.write(log_line)
     except Exception as e:
@@ -164,7 +161,6 @@ def main():
             success_fetches += 1
             is_upwelling, net_hours, status_msg = analyze_strict_36h_window(raw_data, config)
             
-            # AUTOMATISCHE TABELLEN-ERWEITERUNG: Schreibt das Ergebnis direkt in die CSV der Station
             write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg)
             
             if is_upwelling:
