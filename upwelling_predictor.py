@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 
 ATTRIBUTION_NOTICE = """
 ================================================================================
@@ -30,7 +30,9 @@ MONITORED_LOCATIONS = {
 }
 
 def fetch_and_archive(lat, lon, location_name):
-    url = f"https://open-meteo.com{lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&forecast_days=2&past_days=1"
+    """Fragt DWD-Daten über die korrekte Open-Meteo DWD-Subdomain ab."""
+    # KORREKTUR: dwd-api.open-meteo.com statt api.open-meteo.com
+    url = f"https://open-meteo.com{lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&forecast_days=3&past_days=1"
     try:
         response = requests.get(url, timeout=15)
         response.raise_for_status()
@@ -52,32 +54,42 @@ def fetch_and_archive(lat, lon, location_name):
 
 def analyze_strict_36h_window(data, config):
     if not data or "hourly" not in data:
-        return False, None, "Datenfehler"
+        return False, None, "Datenfehler: 'hourly' fehlt im JSON"
         
     hourly = data["hourly"]
     times = hourly.get("time", [])
     speeds = hourly.get("windspeed_10m", [])
     directions = hourly.get("winddirection_10m", [])
     
-    # Bestimmung der aktuellen UTC-Stunde
-    current_hour_str = datetime.utcnow().strftime("%Y-%m-%dT%H:00")
-    try:
-        now_index = times.index(current_hour_str)
-    except ValueError:
-        now_index = 24  # Standard-Fallback bei 1 Tag Vergangenheit
+    if not times or not speeds or not directions:
+        return False, None, "Datenfehler: Unvollständige Arrays"
 
-    # Wir schneiden das feste Fenster aus: 6h Vergangenheit bis 30h Zukunft (= 36 Stunden)
+    now_utc = datetime.now(timezone.utc)
+    now_index = 0
+    min_diff = float('inf')
+    
+    for idx, t_str in enumerate(times):
+        try:
+            t_obj = datetime.strptime(t_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+            diff = abs((t_obj - now_utc).total_seconds())
+            if diff < min_diff:
+                min_diff = diff
+                now_index = idx
+        except ValueError:
+            continue
+
     start_window = now_index - 6
     end_window = now_index + 30
     
-    if start_window < 0 or end_window > len(speeds):
-        return False, None, "Unzureichender Datenumfang in API-Antwort"
+    if start_window < 0:
+        return False, None, f"Fehler: Nicht genügend Vergangenheitsdaten (Start-Index {start_window} negativ)"
+    if end_window > len(speeds):
+        return False, None, f"Fehler: Nicht genügend Prognosedaten (End-Index {end_window} größer als Array-Länge {len(speeds)})"
 
     window_speeds = speeds[start_window:end_window]
     window_directions = directions[start_window:end_window]
     window_times = times[start_window:end_window]
 
-    # 1. Erstelle die stündliche Binärsequenz für das exakte 36h-Fenster
     binary_sequence = []
     for s, d in zip(window_speeds, window_directions):
         speed_ms = s / 3.6
@@ -86,16 +98,12 @@ def analyze_strict_36h_window(data, config):
         else:
             binary_sequence.append(0)
 
-    # 2. Strikte Prüfung der ersten 6 Stunden (Vergangenheit, Indizes 0 bis 5)
     past_sequence = binary_sequence[0:6]
     past_net_hours = sum(past_sequence)
     
-    # Da die maximale Gesamtlücke im 36h-Fenster nur 2h betragen darf,
-    # darf auch in der Vergangenheit bereits maximal 2 Stunden lang kein optimaler Wind gewesen sein.
     if past_net_hours < 4:
          return False, None, f"Ausgeschlossen (Reale Messdaten der letzten 6h unzureichend: Nur {past_net_hours}/6h aktiv)"
 
-    # 3. Prüfung auf maximale zusammenhängende Lücken (max. 2h Lücke am Stück erlaubt)
     gap_counter = 0
     max_gap_found = 0
     for val in binary_sequence:
@@ -109,12 +117,10 @@ def analyze_strict_36h_window(data, config):
     if max_gap_found > 2:
         return False, None, f"Ausgeschlossen (Windunterbrechung von {max_gap_found}h verletzt die Kontinuität von max. 2h)"
 
-    # 4. Endgültige Netto-Stundenzählung (mindestens 34 von 36 Stunden)
     total_net_hours = sum(binary_sequence)
     if total_net_hours < 34:
         return False, None, f"Kriterien nicht erfüllt (Gesamtdauer nur {total_net_hours}/36h)"
 
-    # Wenn alle Bedingungen erfüllt sind, ist das Upwelling-Ereignis extrem wahrscheinlich
     event_info = {
         "net_hours": total_net_hours,
         "past_active": past_net_hours,
@@ -126,6 +132,7 @@ def analyze_strict_36h_window(data, config):
 def main():
     print(ATTRIBUTION_NOTICE)
     triggered_locations = []
+    success_fetches = 0
     
     print(f"Starte strikte 36h-Kontinuitätsprüfung (6h Ist + 30h Prognose) für {len(MONITORED_LOCATIONS)} Orte...\n")
     
@@ -133,6 +140,7 @@ def main():
         raw_data = fetch_and_archive(config["lat"], config["lon"], name)
         
         if raw_data:
+            success_fetches += 1
             is_upwelling, info, status_msg = analyze_strict_36h_window(raw_data, config)
             if is_upwelling:
                 triggered_locations.append(
@@ -141,15 +149,16 @@ def main():
                     f"  💨 Kontinuierlicher Wind: {info['net_hours']} von 36 Std. aktiv (Vergangenheit: {info['past_active']}/6h)"
                 )
             else:
-                # Zeige im Serverlog detailliert an, warum Stationen aussortiert wurden
                 print(f"ℹ️ [{name}] {status_msg}")
                 
     print("\n------------------ ERGEBNISSE ------------------")
-    if triggered_locations:
+    if success_fetches == 0:
+        print("❌ FEHLER: Es konnten von keinem einzigen Ort Daten geladen werden. Bitte API-Endpunkt überprüfen.")
+    elif triggered_locations:
         alert_msg = "⚠️ SEHR HOHE UPWELLING-WAHRSCHEINLICHKEIT (STRIKTE KONTINUITÄT ERFÜLLT):\n\n" + "\n".join(triggered_locations)
         print(alert_msg)
     else:
-        print("✅ Keine akuten Ereignisse. Die extrem strikten Kontinuitätskriterien wurden an keinem Ort vollständig erreicht.")
+        print("✅ Verbindung stabil. Keine akuten Ereignisse an den 15 überwachten Stationen.")
     print("------------------------------------------------")
 
 if __name__ == "__main__":
