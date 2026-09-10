@@ -7,7 +7,7 @@ ATTRIBUTION_NOTICE = """
 ================================================================================
 DATA ATTRIBUTION NOTICE (Open Science Compliance)
 - Meteorological Data: © Deutscher Wetterdienst (DWD)
-- Oceanographic Service: Provided via Open-Meteo API (Licensed under CC-BY 4.0)
+- Oceanographic Model: ICON-EU via Open-Meteo API (Licensed under CC-BY 4.0)
 ================================================================================
 """
 
@@ -30,9 +30,9 @@ MONITORED_LOCATIONS = {
 }
 
 def fetch_and_archive(lat, lon, location_name):
-    """Fragt DWD-Daten über den reparierten API-Endpunkt ab."""
-    # KORREKTUR: Das fehlende /v1/dwd? wurde wieder eingefügt
-    url = f"https://open-meteo.com{lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&forecast_days=3&past_days=1"
+    """Fragt DWD-Daten über die stabile Haupt-API von Open-Meteo ab."""
+    # Verwende die globale Haupt-API und steuere das DWD-Modell über den &models Parameter an
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&models=dwd_icon&forecast_days=3&past_days=1"
     try:
         response = requests.get(url, timeout=15)
         response.raise_for_status()
@@ -58,8 +58,10 @@ def analyze_strict_36h_window(data, config):
         
     hourly = data["hourly"]
     times = hourly.get("time", [])
-    speeds = hourly.get("windspeed_10m", [])
-    directions = hourly.get("winddirection_10m", [])
+    
+    # Open-Meteo appended den Modellnamen an die Keys, wenn man &models nutzt (z.B. windspeed_10m_dwd_icon)
+    speeds = hourly.get("windspeed_10m_dwd_icon", hourly.get("windspeed_10m", []))
+    directions = hourly.get("winddirection_10m_dwd_icon", hourly.get("winddirection_10m", []))
     
     if not times or not speeds or not directions:
         return False, None, "Datenfehler: Unvollständige Arrays"
@@ -81,10 +83,8 @@ def analyze_strict_36h_window(data, config):
     start_window = now_index - 6
     end_window = now_index + 30
     
-    if start_window < 0:
-        return False, None, f"Fehler: Nicht genügend Vergangenheitsdaten (Start-Index {start_window} negativ)"
-    if end_window > len(speeds):
-        return False, None, f"Fehler: Nicht genügend Prognosedaten (End-Index {end_window} größer als Array-Länge {len(speeds)})"
+    if start_window < 0 or end_window > len(speeds):
+        return False, None, f"Fehler: Array-Grenzen überschritten (Index {now_index})"
 
     window_speeds = speeds[start_window:end_window]
     window_directions = directions[start_window:end_window]
@@ -92,6 +92,9 @@ def analyze_strict_36h_window(data, config):
 
     binary_sequence = []
     for s, d in zip(window_speeds, window_directions):
+        if s is None or d is None:
+            binary_sequence.append(0)
+            continue
         speed_ms = s / 3.6
         if speed_ms >= config["min_speed_ms"] and config["crit_dir_min"] <= d <= config["crit_dir_max"]:
             binary_sequence.append(1)
@@ -102,7 +105,7 @@ def analyze_strict_36h_window(data, config):
     past_net_hours = sum(past_sequence)
     
     if past_net_hours < 4:
-         return False, None, f"Ausgeschlossen (Reale Messdaten der letzten 6h unzureichend: Nur {past_net_hours}/6h aktiv)"
+         return False, None, f"Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur {past_net_hours}/6h aktiv)"
 
     gap_counter = 0
     max_gap_found = 0
@@ -115,7 +118,7 @@ def analyze_strict_36h_window(data, config):
             gap_counter = 0
 
     if max_gap_found > 2:
-        return False, None, f"Ausgeschlossen (Windunterbrechung von {max_gap_found}h verletzt die Kontinuität von max. 2h)"
+        return False, None, f"Ausgeschlossen (Windunterbrechung von {max_gap_found}h verletzt die Kontinuität)"
 
     total_net_hours = sum(binary_sequence)
     if total_net_hours < 34:
