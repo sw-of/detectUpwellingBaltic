@@ -35,9 +35,10 @@ def get_archive_dir(location_name):
     return os.path.join("archive", safe_name)
 
 def fetch_and_archive_json(lat, lon, archive_dir):
-    """Fragt DWD-Daten ab und speichert die rohe JSON-Datei."""
-    # REPARIERT: /v1/forecast? wurde korrekt eingesetzt
-    url = f"https://open-meteo.com{lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&models=dwd_icon&forecast_days=3&past_days=1"
+    """Fragt DWD-Daten über die stabile Haupt-API von Open-Meteo ab."""
+    # Verwende die globale Haupt-API und steuere das DWD-Modell über den &models Parameter an
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&models=dwd_icon&forecast_days=3&past_days=1"
+
     try:
         response = requests.get(url, timeout=15)
         response.raise_for_status()
