@@ -29,18 +29,20 @@ MONITORED_LOCATIONS = {
     "Heringsdorf": {"lat": 53.95, "lon": 14.17, "crit_dir_min": 220, "crit_dir_max": 280, "min_speed_ms": 6.0}
 }
 
-def fetch_and_archive(lat, lon, location_name):
-    """Fragt DWD-Daten über die stabile Haupt-API von Open-Meteo ab."""
-    # Verwende die globale Haupt-API und steuere das DWD-Modell über den &models Parameter an
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&models=dwd_icon&forecast_days=3&past_days=1"
+def get_archive_dir(location_name):
+    """Generiert den sicheren Ordnerpfad für eine Station."""
+    safe_name = location_name.lower().replace("ü", "ue").replace("ö", "oe").replace("ä", "ae").replace(" ", "_").replace("/", "-")
+    return os.path.join("archive", safe_name)
+
+def fetch_and_archive_json(lat, lon, archive_dir):
+    """Fragt DWD-Daten ab und speichert die rohe JSON-Datei."""
+    url = f"https://open-meteo.com{lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&models=dwd_icon&forecast_days=3&past_days=1"
     try:
         response = requests.get(url, timeout=15)
         response.raise_for_status()
         data = response.json()
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        safe_name = location_name.lower().replace("ü", "ue").replace("ö", "oe").replace("ä", "ae").replace(" ", "_").replace("/", "-")
-        archive_dir = os.path.join("archive", safe_name)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
         os.makedirs(archive_dir, exist_ok=True)
         
         file_path = os.path.join(archive_dir, f"forecast_{timestamp}.json")
@@ -49,22 +51,43 @@ def fetch_and_archive(lat, lon, location_name):
             
         return data
     except Exception as e:
-        print(f"❌ Fehler beim Datenabruf für {location_name}: {e}")
+        print(f"❌ Fehler beim Datenabruf: {e}")
         return None
+
+def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
+    """Schreibt oder erweitert die tabellarische status_log.csv im Ortsordner."""
+    log_path = os.path.join(archive_dir, "status_log.csv")
+    timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    
+    # Bereite die Datenzeile vor (Semicolon als Trenner für exzellenten Excel-Support)
+    decision = "Ja" if is_upwelling else "Nein"
+    # Bereinige die Nachricht von eventuellen Kommas/Semikolons
+    clean_msg = status_msg.replace(";", ",").replace("\n", " ")
+    log_line = f"{timestamp_utc};{decision};{net_hours};{clean_msg}\n"
+    
+    # Prüfen, ob die Datei neu angelegt werden muss
+    file_exists = os.path.exists(log_path)
+    
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            if not file_exists:
+                # Tabellenkopf schreiben, falls Datei neu ist
+                f.write("timestamp_utc;upwelling_predicted;net_wind_hours;details\n")
+            f.write(log_line)
+    except Exception as e:
+        print(f"❌ Fehler beim Schreiben des tabellarischen Logs: {e}")
 
 def analyze_strict_36h_window(data, config):
     if not data or "hourly" not in data:
-        return False, None, "Datenfehler: 'hourly' fehlt im JSON"
+        return False, 0, "Datenfehler: 'hourly' fehlt im JSON"
         
     hourly = data["hourly"]
     times = hourly.get("time", [])
-    
-    # Open-Meteo appended den Modellnamen an die Keys, wenn man &models nutzt (z.B. windspeed_10m_dwd_icon)
     speeds = hourly.get("windspeed_10m_dwd_icon", hourly.get("windspeed_10m", []))
     directions = hourly.get("winddirection_10m_dwd_icon", hourly.get("winddirection_10m", []))
     
     if not times or not speeds or not directions:
-        return False, None, "Datenfehler: Unvollständige Arrays"
+        return False, 0, "Datenfehler: Unvollständige Arrays"
 
     now_utc = datetime.now(timezone.utc)
     now_index = 0
@@ -84,7 +107,7 @@ def analyze_strict_36h_window(data, config):
     end_window = now_index + 30
     
     if start_window < 0 or end_window > len(speeds):
-        return False, None, f"Fehler: Array-Grenzen überschritten (Index {now_index})"
+        return False, 0, f"Fehler: Zeitgrenzen überschritten (Index {now_index})"
 
     window_speeds = speeds[start_window:end_window]
     window_directions = directions[start_window:end_window]
@@ -105,7 +128,7 @@ def analyze_strict_36h_window(data, config):
     past_net_hours = sum(past_sequence)
     
     if past_net_hours < 4:
-         return False, None, f"Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur {past_net_hours}/6h aktiv)"
+         return False, past_net_hours, f"Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur {past_net_hours}/6h aktiv)"
 
     gap_counter = 0
     max_gap_found = 0
@@ -118,50 +141,45 @@ def analyze_strict_36h_window(data, config):
             gap_counter = 0
 
     if max_gap_found > 2:
-        return False, None, f"Ausgeschlossen (Windunterbrechung von {max_gap_found}h verletzt die Kontinuität)"
+        return False, sum(binary_sequence), f"Ausgeschlossen (Windunterbrechung von {max_gap_found}h verletzt die Kontinuität)"
 
     total_net_hours = sum(binary_sequence)
     if total_net_hours < 34:
-        return False, None, f"Kriterien nicht erfüllt (Gesamtdauer nur {total_net_hours}/36h)"
+        return False, total_net_hours, f"Kriterien nicht erfüllt (Gesamtdauer nur {total_net_hours}/36h)"
 
-    event_info = {
-        "net_hours": total_net_hours,
-        "past_active": past_net_hours,
-        "start": window_times[0].replace("T", " "),
-        "end": window_times[-1].replace("T", " ")
-    }
-    return True, event_info, "Kriterien perfekt erfüllt"
+    return True, total_net_hours, f"Kriterien perfekt erfüllt ({total_net_hours}/36h aktiv)"
 
 def main():
     print(ATTRIBUTION_NOTICE)
     triggered_locations = []
     success_fetches = 0
     
-    print(f"Starte strikte 36h-Kontinuitätsprüfung (6h Ist + 30h Prognose) für {len(MONITORED_LOCATIONS)} Orte...\n")
+    print(f"Starte 36h-Prüfung und tabellarische Archivierung für {len(MONITORED_LOCATIONS)} Orte...\n")
     
     for name, config in MONITORED_LOCATIONS.items():
-        raw_data = fetch_and_archive(config["lat"], config["lon"], name)
+        archive_dir = get_archive_dir(name)
+        raw_data = fetch_and_archive_json(config["lat"], config["lon"], archive_dir)
         
         if raw_data:
             success_fetches += 1
-            is_upwelling, info, status_msg = analyze_strict_36h_window(raw_data, config)
+            is_upwelling, net_hours, status_msg = analyze_strict_36h_window(raw_data, config)
+            
+            # AUTOMATISCHE TABELLEN-ERWEITERUNG: Schreibt das Ergebnis direkt in die CSV der Station
+            write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg)
+            
             if is_upwelling:
-                triggered_locations.append(
-                    f"- {name}:\n"
-                    f"  ⏱️ Volles 36h-Fenster: {info['start']} bis {info['end']} UTC\n"
-                    f"  💨 Kontinuierlicher Wind: {info['net_hours']} von 36 Std. aktiv (Vergangenheit: {info['past_active']}/6h)"
-                )
+                triggered_locations.append(f"- {name}: {status_msg}")
             else:
                 print(f"ℹ️ [{name}] {status_msg}")
                 
     print("\n------------------ ERGEBNISSE ------------------")
     if success_fetches == 0:
-        print("❌ FEHLER: Es konnten von keinem einzigen Ort Daten geladen werden. Bitte API-Endpunkt überprüfen.")
+        print("❌ FEHLER: Keine Daten geladen.")
     elif triggered_locations:
-        alert_msg = "⚠️ SEHR HOHE UPWELLING-WAHRSCHEINLICHKEIT (STRIKTE KONTINUITÄT ERFÜLLT):\n\n" + "\n".join(triggered_locations)
+        alert_msg = "⚠️ SEHR HOHE UPWELLING-WAHRSCHEINLICHKEIT:\n\n" + "\n".join(triggered_locations)
         print(alert_msg)
     else:
-        print("✅ Verbindung stabil. Keine akuten Ereignisse an den 15 überwachten Stationen.")
+        print("✅ Verbindung stabil. Tabellarische Status-Logs aktualisiert. Keine akuten Ereignisse.")
     print("------------------------------------------------")
 
 if __name__ == "__main__":
