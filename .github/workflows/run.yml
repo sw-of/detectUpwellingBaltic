@@ -2,49 +2,44 @@ name: Automated Upwelling Predictor
 
 on:
   schedule:
-    # Läuft alle 6 Stunden (um 00:00, 06:00, 12:00 und 18:00 UTC)
     - cron: '0 */6 * * *'
   workflow_dispatch:
-    # Ermöglicht es dir, das Skript jederzeit manuell per Klick zu starten
+
+permissions:
+  contents: write
 
 jobs:
   run-predict:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Holt den aktuellen Code aus deinem Repository
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4.2.2
 
-    # 2. Richtet eine stabile Python-Umgebung ein
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v5.3.0
       with:
         python-version: '3.10'
 
-    # 3. Installiert die benötigte 'requests' Bibliothek
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install requests
 
-    # 4. Führt dein Python-Skript aus
     - name: Run Upwelling Predictor
       run: python upwelling_predictor.py
 
-    # 5. Speichert die neu generierten JSON-Archivdaten zurück ins Repository
     - name: Commit and Push Archive Data
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "41898282+github-actions[bot]@://github.com"
         
-        # Fügt alle neu erstellten Ordner und JSON-Dateien hinzu
-        git add archive/ || true
+        # EXKLUSIVE ERLAUBNIS: Nur der Ordner archive/ und die eine Übersichtsdatei werden hinzugefügt
+        git add archive/ upwellingWarning.csv
         
-        # Nur committen und pushen, wenn sich tatsächlich neue Daten im Archiv befinden
         if ! git diff --cached --quiet; then
-          git commit -m "Wissenschaftliches Datenarchiv aktualisiert: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git commit -m "Datenarchiv und upwellingWarning.csv aktualisiert: $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
         else
-          echo "Keine neuen Archivdaten zu sichern."
+          echo "Keine relevanten Datenänderungen zu sichern."
         fi
