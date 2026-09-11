@@ -45,7 +45,7 @@ MONITORED_LOCATIONS = {
 def send_ntfy_notification(message, priority="default", title="Upwelling Predictor"):
     if not NTFY_TOPIC:
         return
-    url = f"https://ntfy.sh{NTFY_TOPIC}"
+    url = f"https://ntfy.sh/{NTFY_TOPIC}"
     headers = {
         "Title": title,
         "Priority": priority,
