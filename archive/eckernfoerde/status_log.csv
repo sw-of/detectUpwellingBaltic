@@ -1,6 +1,6 @@
-timestamp_utc;upwelling_predicted;net_wind_hours;details
-2026-09-10 19:06;Nein;0;Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)
-2026-09-11 03:06;Nein;0;Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)
-2026-09-11 07:53;Nein;0;Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)
+timestamp_utc,upwelling_predicted,net_wind_hours,details
+2026-09-10 19:06,Nein,0,Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)
+2026-09-11 03:06,Nein,0,Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)
+2026-09-11 07:53,Nein,0,Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)
 2026-09-11 08:48,Nein,0,"Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)"
 2026-09-11 08:54,Nein,0,"Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur 0/6h aktiv)"
