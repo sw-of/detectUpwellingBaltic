@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it using these metadata."
+title: "Baltic Sea Upwelling Predictor"
+authors:
+  - family-names: "Winkler"
+    given-names: "Sascha"
+    affiliation: "Thuenen Institute of Baltic Sea Fisheries"
+version: "1.0.0"
+date-released: "2026-09-11"
+url: "https://github.com/sw-of/detectUpwellingBaltic"
+abstract: >-
+  An automated, open-science early warning and data-archiving pipeline for
+  coastal upwelling events along the German Baltic Sea coast. The system
+  evaluates strict wind-driven Ekman transport conditions using DWD ICON-EU
+  meteorological forecasts and records a continuous time series for validation.
+keywords:
+  - oceanography
+  - baltic-sea
+  - upwelling
+  - meteorology
+license: MIT
