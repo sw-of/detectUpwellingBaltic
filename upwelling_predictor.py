@@ -11,7 +11,7 @@ DATA ATTRIBUTION NOTICE (Open Science Compliance)
 ================================================================================
 """
 
-# Unsere 15 Zielstationen
+# Unsere 15 Zielstationen sortiert von West nach Ost
 MONITORED_LOCATIONS = {
     "Flensburg": {"lat": 54.79, "lon": 9.44, "crit_dir_min": 140, "crit_dir_max": 220, "min_speed_ms": 6.0},
     "Maasholm": {"lat": 54.68, "lon": 9.99, "crit_dir_min": 130, "crit_dir_max": 180, "min_speed_ms": 6.0},
@@ -37,8 +37,6 @@ def get_archive_dir(location_name):
 def fetch_all_batch():
     """Holt die Daten für alle 15 Orte mit einem einzigen, drosselungssicheren API-Call."""
     base_url = "https://api.open-meteo.com/v1/forecast"
-    
-    # Extrahiere Listen von Längen- und Breitengraden (Kommagetrennt für Open-Meteo Batch)
     latitudes = [str(config["lat"]) for config in MONITORED_LOCATIONS.values()]
     longitudes = [str(config["lon"]) for config in MONITORED_LOCATIONS.values()]
     
@@ -55,20 +53,15 @@ def fetch_all_batch():
         print("Sende wissenschaftlichen Batch-Request für alle 15 Küstensegmente...")
         response = requests.get(base_url, params=api_params, timeout=25)
         response.raise_for_status()
-        
-        # Open-Meteo liefert bei Multi-Koordinaten eine Liste von JSON-Strukturen zurück
         results = response.json()
         if not isinstance(results, list):
-            # Fallback falls es nur ein Ort wäre, verpackt Open-Meteo es manchmal nicht als Liste
             results = [results]
-            
         return results
     except Exception as e:
         print(f"❌ Kritischer Fehler beim Batch-Datenabruf: {e}")
         return None
 
 def archive_single_json(location_name, data):
-    """Archiviert die extrahierten Ortsdaten als JSON-Datei."""
     archive_dir = get_archive_dir(location_name)
     os.makedirs(archive_dir, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
@@ -78,21 +71,47 @@ def archive_single_json(location_name, data):
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
+    """Schreibt das Einzel-Log im Archiv mit einem Komma (,) als Trenner."""
     log_path = os.path.join(archive_dir, "status_log.csv")
     timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     
     decision = "Ja" if is_upwelling else "Nein"
-    clean_msg = status_msg.replace(";", ",").replace("\n", " ")
-    log_line = f"{timestamp_utc};{decision};{net_hours};{clean_msg}\n"
+    # Anführungszeichen um die Nachricht verhindern CSV-Fehler bei enthaltenen Kommas
+    clean_msg = status_msg.replace('"', '""')
+    log_line = f'{timestamp_utc},{decision},{net_hours},"{clean_msg}"\n'
     
     file_exists = os.path.exists(log_path)
     try:
         with open(log_path, "a", encoding="utf-8") as f:
             if not file_exists:
-                f.write("timestamp_utc;upwelling_predicted;net_wind_hours;details\n")
+                f.write("timestamp_utc,upwelling_predicted,net_wind_hours,details\n")
             f.write(log_line)
     except Exception as e:
         print(f"❌ Fehler beim Schreiben des tabellarischen Logs: {e}")
+
+def write_global_summary_log(results_dict):
+    """Schreibt oder erweitert die upwellingWarning.csv im Hauptpfad."""
+    log_path = "upwellingWarning.csv"
+    timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    
+    # Orte sortiert holen, damit die Spaltenreihenfolge immer identisch bleibt
+    sorted_places = sorted(list(MONITORED_LOCATIONS.keys()))
+    file_exists = os.path.exists(log_path)
+    
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            if not file_exists:
+                # Header generieren: timestamp_utc,Ort1,Ort2,...
+                header = "timestamp_utc," + ",".join(sorted_places) + "\n"
+                f.write(header)
+            
+            # Zeile generieren: timestamp_utc,Ja,Nein,Nein,...
+            row_values = [results_dict[place] for place in sorted_places]
+            row_line = f"{timestamp_utc}," + ",".join(row_values) + "\n"
+            f.write(row_line)
+        print(f"✅ Globale Übersichtstabelle '{log_path}' erfolgreich aktualisiert.")
+    except Exception as e:
+        print(f"❌ Fehler beim Schreiben der globalen Übersichtstabelle: {e}")
 
 def analyze_strict_36h_window(data, config):
     if not data or "hourly" not in data:
@@ -169,38 +188,38 @@ def analyze_strict_36h_window(data, config):
 def main():
     print(ATTRIBUTION_NOTICE)
     triggered_locations = []
+    global_summary_data = {}
     
-    # 1. Alle Daten gleichzeitig abrufen
     batch_data = fetch_all_batch()
-    
     if not batch_data:
         print("❌ FEHLER: Es konnten keine Daten geladen werden. Pipeline abgebrochen.")
         return
         
     print(f"Daten für alle {len(batch_data)} Stationen erfolgreich erhalten. Starte Analyse und Archivierung...\n")
     
-    # 2. Durch die empfangenen Datensätze iterieren (Reihenfolge entspricht den MONITORED_LOCATIONS)
     for idx, (name, config) in enumerate(MONITORED_LOCATIONS.items()):
         if idx >= len(batch_data):
             break
             
-        # Extrahiere die Teildaten für diesen spezifischen Ort aus dem Batch
         single_location_data = batch_data[idx]
-        
-        # Sichern der JSON-Datei
         archive_dir = get_archive_dir(name)
         archive_single_json(name, single_location_data)
         
-        # Analyse durchführen
         is_upwelling, net_hours, status_msg = analyze_strict_36h_window(single_location_data, config)
         
-        # Tabellarisches CSV-Log schreiben/erweitern
+        # Für das Archiv-Log
         write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg)
+        
+        # Für die globale Übersichtstabelle sammeln
+        global_summary_data[name] = "Ja" if is_upwelling else "Nein"
         
         if is_upwelling:
             triggered_locations.append(f"- {name}: {status_msg}")
         else:
             print(f"ℹ️ [{name}] {status_msg}")
+                
+    # Schreibe globale CSV-Tabelle im Hauptverzeichnis
+    write_global_summary_log(global_summary_data)
                 
     print("\n------------------ ERGEBNISSE ------------------")
     if triggered_locations:
