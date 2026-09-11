@@ -11,6 +11,7 @@ DATA ATTRIBUTION NOTICE (Open Science Compliance)
 ================================================================================
 """
 
+# Unsere 15 Zielstationen
 MONITORED_LOCATIONS = {
     "Flensburg": {"lat": 54.79, "lon": 9.44, "crit_dir_min": 140, "crit_dir_max": 220, "min_speed_ms": 6.0},
     "Maasholm": {"lat": 54.68, "lon": 9.99, "crit_dir_min": 130, "crit_dir_max": 180, "min_speed_ms": 6.0},
@@ -30,34 +31,53 @@ MONITORED_LOCATIONS = {
 }
 
 def get_archive_dir(location_name):
-    """Generiert den sicheren Ordnerpfad für eine Station."""
     safe_name = location_name.lower().replace("ü", "ue").replace("ö", "oe").replace("ä", "ae").replace(" ", "_").replace("/", "-")
     return os.path.join("archive", safe_name)
 
-def fetch_and_archive_json(lat, lon, archive_dir):
-    """Fragt DWD-Daten über die stabile Haupt-API von Open-Meteo ab."""
-    # Verwende die globale Haupt-API und steuere das DWD-Modell über den &models Parameter an
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=windspeed_10m,winddirection_10m&models=dwd_icon&forecast_days=3&past_days=1"
-
+def fetch_all_batch():
+    """Holt die Daten für alle 15 Orte mit einem einzigen, drosselungssicheren API-Call."""
+    base_url = "https://api.open-meteo.com/v1/forecast"
+    
+    # Extrahiere Listen von Längen- und Breitengraden (Kommagetrennt für Open-Meteo Batch)
+    latitudes = [str(config["lat"]) for config in MONITORED_LOCATIONS.values()]
+    longitudes = [str(config["lon"]) for config in MONITORED_LOCATIONS.values()]
+    
+    api_params = {
+        "latitude": ",".join(latitudes),
+        "longitude": ",".join(longitudes),
+        "hourly": "windspeed_10m,winddirection_10m",
+        "models": "dwd_icon",
+        "forecast_days": 3,
+        "past_days": 1
+    }
+    
     try:
-        response = requests.get(url, timeout=15)
+        print("Sende wissenschaftlichen Batch-Request für alle 15 Küstensegmente...")
+        response = requests.get(base_url, params=api_params, timeout=25)
         response.raise_for_status()
-        data = response.json()
         
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-        os.makedirs(archive_dir, exist_ok=True)
-        
-        file_path = os.path.join(archive_dir, f"forecast_{timestamp}.json")
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        # Open-Meteo liefert bei Multi-Koordinaten eine Liste von JSON-Strukturen zurück
+        results = response.json()
+        if not isinstance(results, list):
+            # Fallback falls es nur ein Ort wäre, verpackt Open-Meteo es manchmal nicht als Liste
+            results = [results]
             
-        return data
+        return results
     except Exception as e:
-        print(f"❌ Fehler beim Datenabruf: {e}")
+        print(f"❌ Kritischer Fehler beim Batch-Datenabruf: {e}")
         return None
 
+def archive_single_json(location_name, data):
+    """Archiviert die extrahierten Ortsdaten als JSON-Datei."""
+    archive_dir = get_archive_dir(location_name)
+    os.makedirs(archive_dir, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    
+    file_path = os.path.join(archive_dir, f"forecast_{timestamp}.json")
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
 def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
-    """Schreibt oder erweitert die tabellarische status_log.csv im Ortsordner."""
     log_path = os.path.join(archive_dir, "status_log.csv")
     timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     
@@ -66,7 +86,6 @@ def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
     log_line = f"{timestamp_utc};{decision};{net_hours};{clean_msg}\n"
     
     file_exists = os.path.exists(log_path)
-    
     try:
         with open(log_path, "a", encoding="utf-8") as f:
             if not file_exists:
@@ -150,33 +169,45 @@ def analyze_strict_36h_window(data, config):
 def main():
     print(ATTRIBUTION_NOTICE)
     triggered_locations = []
-    success_fetches = 0
     
-    print(f"Starte 36h-Prüfung und tabellarische Archivierung für {len(MONITORED_LOCATIONS)} Orte...\n")
+    # 1. Alle Daten gleichzeitig abrufen
+    batch_data = fetch_all_batch()
     
-    for name, config in MONITORED_LOCATIONS.items():
-        archive_dir = get_archive_dir(name)
-        raw_data = fetch_and_archive_json(config["lat"], config["lon"], archive_dir)
+    if not batch_data:
+        print("❌ FEHLER: Es konnten keine Daten geladen werden. Pipeline abgebrochen.")
+        return
         
-        if raw_data:
-            success_fetches += 1
-            is_upwelling, net_hours, status_msg = analyze_strict_36h_window(raw_data, config)
+    print(f"Daten für alle {len(batch_data)} Stationen erfolgreich erhalten. Starte Analyse und Archivierung...\n")
+    
+    # 2. Durch die empfangenen Datensätze iterieren (Reihenfolge entspricht den MONITORED_LOCATIONS)
+    for idx, (name, config) in enumerate(MONITORED_LOCATIONS.items()):
+        if idx >= len(batch_data):
+            break
             
-            write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg)
-            
-            if is_upwelling:
-                triggered_locations.append(f"- {name}: {status_msg}")
-            else:
-                print(f"ℹ️ [{name}] {status_msg}")
+        # Extrahiere die Teildaten für diesen spezifischen Ort aus dem Batch
+        single_location_data = batch_data[idx]
+        
+        # Sichern der JSON-Datei
+        archive_dir = get_archive_dir(name)
+        archive_single_json(name, single_location_data)
+        
+        # Analyse durchführen
+        is_upwelling, net_hours, status_msg = analyze_strict_36h_window(single_location_data, config)
+        
+        # Tabellarisches CSV-Log schreiben/erweitern
+        write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg)
+        
+        if is_upwelling:
+            triggered_locations.append(f"- {name}: {status_msg}")
+        else:
+            print(f"ℹ️ [{name}] {status_msg}")
                 
     print("\n------------------ ERGEBNISSE ------------------")
-    if success_fetches == 0:
-        print("❌ FEHLER: Keine Daten geladen.")
-    elif triggered_locations:
+    if triggered_locations:
         alert_msg = "⚠️ SEHR HOHE UPWELLING-WAHRSCHEINLICHKEIT:\n\n" + "\n".join(triggered_locations)
         print(alert_msg)
     else:
-        print("✅ Verbindung stabil. Tabellarische Status-Logs aktualisiert. Keine akuten Ereignisse.")
+        print("✅ Verbindung stabil und drosselungssicher. Tabellarische Status-Logs für alle 15 Orte aktualisiert. Keine akuten Ereignisse.")
     print("------------------------------------------------")
 
 if __name__ == "__main__":
