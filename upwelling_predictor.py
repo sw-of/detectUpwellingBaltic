@@ -230,11 +230,11 @@ def main():
     if triggered_locations:
         alert_msg = "Upwelling-Kriterien an folgenden Küstenabschnitten erfüllt:\n" + "\n".join(triggered_locations)
         print(alert_msg)
-        send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_ALERT, title="⚠️ STRIKTE UPWELLING-WARNUNG")
+        send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_ALERT, title="!! STRIKTE UPWELLING-WARNUNG !!")
     else:
         info_msg = f"Routine-Lauf erfolgreich um {datetime.now(timezone.utc).strftime('%H:%M UTC')}. Daten archiviert. Keine akuten Ereignisse."
         print(info_msg)
-        send_ntfy_notification(info_msg, priority=NTFY_LEVEL_ROUTINE, title="✅ Routine-Check Ostsee")
+        send_ntfy_notification(info_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
     print("------------------------------------------------")
 
 if __name__ == "__main__":
