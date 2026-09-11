@@ -11,7 +11,19 @@ DATA ATTRIBUTION NOTICE (Open Science Compliance)
 ================================================================================
 """
 
-# Unsere 15 Zielstationen sortiert von West nach Ost
+# ==============================================================================
+# CONFIGURATION (Meldungs-Einstellungen & Kanal-Konfiguration)
+# ==============================================================================
+# Dein ntfy-Kanalname (Exakt so in der Android-App über das "+" abonnieren!)
+NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"
+
+# Hier kannst du die Meldungslevel flexibel anpassen:
+# Erlaubte ntfy-Level: 'max' (sehr laut), 'high' (wichtig/破坏DND), 
+#                     'default' (normal), 'low' (lautlos), 'min' (versteckt)
+NTFY_LEVEL_ALERT = "high"      # Standard: Mit Ton & Vibration bei akutem Alarm
+NTFY_LEVEL_ROUTINE = "low"     # Standard: Komplett lautlos im Hintergrund für Routine-Durchläufe
+# ==============================================================================
+
 MONITORED_LOCATIONS = {
     "Flensburg": {"lat": 54.79, "lon": 9.44, "crit_dir_min": 140, "crit_dir_max": 220, "min_speed_ms": 6.0},
     "Maasholm": {"lat": 54.68, "lon": 9.99, "crit_dir_min": 130, "crit_dir_max": 180, "min_speed_ms": 6.0},
@@ -30,13 +42,29 @@ MONITORED_LOCATIONS = {
     "Heringsdorf": {"lat": 53.95, "lon": 14.17, "crit_dir_min": 220, "crit_dir_max": 280, "min_speed_ms": 6.0}
 }
 
+def send_ntfy_notification(message, priority="default", title="Upwelling Predictor"):
+    if not NTFY_TOPIC:
+        return
+    url = f"https://ntfy.sh{NTFY_TOPIC}"
+    headers = {
+        "Title": title,
+        "Priority": priority,
+        "Tags": "ocean,cyclone" if priority in ["high", "max"] else "white_check_mark,bar_chart"
+    }
+    try:
+        requests.post(url, data=message.encode('utf-8'), headers=headers, timeout=10)
+        print(f"📡 Push-Benachrichtigung (Level: '{priority}') an ntfy.sh gesendet.")
+    except Exception as e:
+        print(f"❌ Fehler beim Senden der ntfy-Push-Meldung: {e}")
+
 def get_archive_dir(location_name):
     safe_name = location_name.lower().replace("ü", "ue").replace("ö", "oe").replace("ä", "ae").replace(" ", "_").replace("/", "-")
     return os.path.join("archive", safe_name)
 
 def fetch_all_batch():
-    """Holt die Daten für alle 15 Orte mit einem einzigen, drosselungssicheren API-Call."""
+    """Holt alle Wetterdaten über die korrekte Basis-URL im Batch-Verfahren."""
     base_url = "https://api.open-meteo.com/v1/forecast"
+    
     latitudes = [str(config["lat"]) for config in MONITORED_LOCATIONS.values()]
     longitudes = [str(config["lon"]) for config in MONITORED_LOCATIONS.values()]
     
@@ -48,7 +76,6 @@ def fetch_all_batch():
         "forecast_days": 3,
         "past_days": 1
     }
-    
     try:
         print("Sende wissenschaftlichen Batch-Request für alle 15 Küstensegmente...")
         response = requests.get(base_url, params=api_params, timeout=25)
@@ -65,21 +92,16 @@ def archive_single_json(location_name, data):
     archive_dir = get_archive_dir(location_name)
     os.makedirs(archive_dir, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-    
     file_path = os.path.join(archive_dir, f"forecast_{timestamp}.json")
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
-    """Schreibt das Einzel-Log im Archiv mit einem Komma (,) als Trenner."""
     log_path = os.path.join(archive_dir, "status_log.csv")
     timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    
     decision = "Ja" if is_upwelling else "Nein"
-    # Anführungszeichen um die Nachricht verhindern CSV-Fehler bei enthaltenen Kommas
     clean_msg = status_msg.replace('"', '""')
     log_line = f'{timestamp_utc},{decision},{net_hours},"{clean_msg}"\n'
-    
     file_exists = os.path.exists(log_path)
     try:
         with open(log_path, "a", encoding="utf-8") as f:
@@ -90,22 +112,15 @@ def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
         print(f"❌ Fehler beim Schreiben des tabellarischen Logs: {e}")
 
 def write_global_summary_log(results_dict):
-    """Schreibt oder erweitert die upwellingWarning.csv im Hauptpfad."""
     log_path = "upwellingWarning.csv"
     timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    
-    # Orte sortiert holen, damit die Spaltenreihenfolge immer identisch bleibt
     sorted_places = sorted(list(MONITORED_LOCATIONS.keys()))
     file_exists = os.path.exists(log_path)
-    
     try:
         with open(log_path, "a", encoding="utf-8") as f:
             if not file_exists:
-                # Header generieren: timestamp_utc,Ort1,Ort2,...
                 header = "timestamp_utc," + ",".join(sorted_places) + "\n"
                 f.write(header)
-            
-            # Zeile generieren: timestamp_utc,Ja,Nein,Nein,...
             row_values = [results_dict[place] for place in sorted_places]
             row_line = f"{timestamp_utc}," + ",".join(row_values) + "\n"
             f.write(row_line)
@@ -116,9 +131,10 @@ def write_global_summary_log(results_dict):
 def analyze_strict_36h_window(data, config):
     if not data or "hourly" not in data:
         return False, 0, "Datenfehler: 'hourly' fehlt im JSON"
-        
     hourly = data["hourly"]
     times = hourly.get("time", [])
+    
+    # Sicherstellen, dass wir die Keys flexibel auslesen (mit oder ohne Modell-Suffix)
     speeds = hourly.get("windspeed_10m_dwd_icon", hourly.get("windspeed_10m", []))
     directions = hourly.get("winddirection_10m_dwd_icon", hourly.get("winddirection_10m", []))
     
@@ -128,7 +144,6 @@ def analyze_strict_36h_window(data, config):
     now_utc = datetime.now(timezone.utc)
     now_index = 0
     min_diff = float('inf')
-    
     for idx, t_str in enumerate(times):
         try:
             t_obj = datetime.strptime(t_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
@@ -141,13 +156,11 @@ def analyze_strict_36h_window(data, config):
 
     start_window = now_index - 6
     end_window = now_index + 30
-    
     if start_window < 0 or end_window > len(speeds):
         return False, 0, f"Fehler: Zeitgrenzen überschritten (Index {now_index})"
 
     window_speeds = speeds[start_window:end_window]
     window_directions = directions[start_window:end_window]
-    window_times = times[start_window:end_window]
 
     binary_sequence = []
     for s, d in zip(window_speeds, window_directions):
@@ -162,7 +175,6 @@ def analyze_strict_36h_window(data, config):
 
     past_sequence = binary_sequence[0:6]
     past_net_hours = sum(past_sequence)
-    
     if past_net_hours < 4:
          return False, past_net_hours, f"Ausgeschlossen (Küstenvorgeschichte unzureichend: Nur {past_net_hours}/6h aktiv)"
 
@@ -192,42 +204,39 @@ def main():
     
     batch_data = fetch_all_batch()
     if not batch_data:
-        print("❌ FEHLER: Es konnten keine Daten geladen werden. Pipeline abgebrochen.")
+        print("❌ FEHLER: Keine Daten geladen.")
+        send_ntfy_notification("Kritischer Fehler: Wetter-API liefert keine Daten!", priority="high", title="🚨 Systemfehler")
         return
         
-    print(f"Daten für alle {len(batch_data)} Stationen erfolgreich erhalten. Starte Analyse und Archivierung...\n")
-    
     for idx, (name, config) in enumerate(MONITORED_LOCATIONS.items()):
         if idx >= len(batch_data):
             break
-            
         single_location_data = batch_data[idx]
         archive_dir = get_archive_dir(name)
         archive_single_json(name, single_location_data)
         
         is_upwelling, net_hours, status_msg = analyze_strict_36h_window(single_location_data, config)
-        
-        # Für das Archiv-Log
         write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg)
-        
-        # Für die globale Übersichtstabelle sammeln
         global_summary_data[name] = "Ja" if is_upwelling else "Nein"
         
         if is_upwelling:
-            triggered_locations.append(f"- {name}: {status_msg}")
+            triggered_locations.append(f"📍 {name} ({net_hours}/36h aktiv)")
         else:
             print(f"ℹ️ [{name}] {status_msg}")
                 
-    # Schreibe globale CSV-Tabelle im Hauptverzeichnis
     write_global_summary_log(global_summary_data)
                 
     print("\n------------------ ERGEBNISSE ------------------")
     if triggered_locations:
-        alert_msg = "⚠️ SEHR HOHE UPWELLING-WAHRSCHEINLICHKEIT:\n\n" + "\n".join(triggered_locations)
+        alert_msg = "Upwelling-Kriterien an folgenden Küstenabschnitten erfüllt:\n" + "\n".join(triggered_locations)
         print(alert_msg)
+        send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_ALERT, title="⚠️ STRIKTE UPWELLING-WARNUNG")
     else:
-        print("✅ Verbindung stabil und drosselungssicher. Tabellarische Status-Logs für alle 15 Orte aktualisiert. Keine akuten Ereignisse.")
+        info_msg = f"Routine-Lauf erfolgreich um {datetime.now(timezone.utc).strftime('%H:%M UTC')}. Daten archiviert. Keine akuten Ereignisse."
+        print(info_msg)
+        send_ntfy_notification(info_msg, priority=NTFY_LEVEL_ROUTINE, title="✅ Routine-Check Ostsee")
     print("------------------------------------------------")
 
 if __name__ == "__main__":
     main()
+
