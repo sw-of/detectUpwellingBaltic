@@ -102,15 +102,15 @@ def fetch_all_batch():
         return None
 
 def fetch_real_observations_batch(base_time_utc):
-    base_url = "https://archive-api.open-meteo.com/v1/archive"
+    base_url = "https://api.open-meteo.com/v1/forecast"
     latitudes = [str(config["lat"]) for config in MONITORED_LOCATIONS.values()]
     longitudes = [str(config["lon"]) for config in MONITORED_LOCATIONS.values()]
     end_date = base_time_utc.strftime("%Y-%m-%d")
     start_date = (base_time_utc - timedelta(days=1)).strftime("%Y-%m-%d")
     api_params = {
         "latitude": ",".join(latitudes), "longitude": ",".join(longitudes),
-        "start_date": start_date, "end_date": end_date,
-        "hourly": "windspeed_10m,winddirection_10m", "windspeed_unit": "ms"
+        "hourly": "windspeed_10m,winddirection_10m", "models": "ecmwf_ifs",
+        "windspeed_unit": "ms", "forecast_days": 0, "past_hours": HOURS_WINDOW_SIZE
     }
     try:
         response = requests.get(base_url, params=api_params, timeout=25)
