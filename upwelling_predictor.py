@@ -33,10 +33,10 @@ FORECAST_DAYS_API = 4          # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
 MIN_WIND_SPEED_MS = 6.0        
-REQUIRED_NET_HOURS = 34        # Mindestanzahl aktiver Stunden im 36h-Fenster
+REQUIRED_NET_HOURS = 33        # Mindestanzahl aktiver Stunden im 36h-Fenster
 
 # Parameter für Kontinitätsunterbrechungen (Gaps) innerhalb des 36h-Fensters
-ALLOWED_MAX_FLAUTE_HOURS = 3   
+ALLOWED_MAX_FLAUTE_HOURS = 2   
 ALLOWED_MAX_DIRECTION_GAP_HOURS = 1 
 
 FLAUTE_SPEED_MS = 1.5          
@@ -90,7 +90,7 @@ def fetch_all_batch():
         "models": "dwd_icon",
         "windspeed_unit": "ms",  # NEU: Zwingt die API, direkt m/s zu liefern!
         "forecast_days": FORECAST_DAYS_API, 
-        "past_days": 1
+        "past_days": 2
     }
     try:
         response = requests.get(base_url, params=api_params, timeout=25)
@@ -316,7 +316,7 @@ def main():
             elif hours_until_event < 72: level, emoji = "Stufe 2 (Nahe Prognose)", "🟡"
             else: level, emoji = "Stufe 1 (Fernprognose)", "⏳"
                 
-            triggered_by_level[level].append(f"{emoji} {name} (Kern-Start: {result_status} UTC)\n   ┗ ℹ️ {status_msg}")
+            triggered_by_level[level].append(f"{emoji} {name} (Analysefensterbeginn: {result_status} UTC)\n   ┗ ℹ️ {status_msg}")
         else:
             if had_active_alert: revoked_locations.append(f"🟢 {name}: {status_msg}")
             print(f"ℹ️ [{name}] {status_msg}")
