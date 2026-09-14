@@ -8,6 +8,7 @@ This system uses meteorological forecasts from the German Weather Service (DWD) 
 * **Automated Pipeline:** Runs every 6 hours via GitHub Actions.
 * **Data Archiving:** Saves raw forecast JSON files locally in the repository for reproducibility and future validation.
 * **Smart Alerting:** Evaluates wind speed, duration, and direction thresholds for specific coastal segments.
+* **Double Check:** Evaluates forecast values with nowcast and archive data (reanalyses)
 
 ## 🗺️ Monitored Regions & Upwelling Conditions
 * **Mecklenburg-Vorpommern Coast (e.g., Rostock-Warnemünde, Darß):** Triggered by sustained Westerly winds (West to Southwest).
@@ -16,9 +17,10 @@ This system uses meteorological forecasts from the German Weather Service (DWD) 
 ## 📈 Data Sources & Attribution
 This project relies entirely on open data provided under German open-data laws:
 * **Meteorological Data:** © Deutscher Wetterdienst (DWD), fetched via the non-commercial Open-Meteo DWD API (licensed under CC-BY 4.0).
-* **Oceanographic Data:** © Bundesamt für Seeschifffahrt und Hydrographie (BSH).
+* **Meteorological Data:** © Copernicus Climate Change Service (ECMWF) – ERA5 / ERA5-Land Reanalysis (Produced via Open-Meteo API under CC-BY 4.0).
 
-## 🛠️ Repository Structure (Planned)
-* `/archive/` - Contains the historical raw forecast JSON payloads for validation.
+## 🛠️ Repository Structure
+* `/archive/` - Contains a folder for each analysed place. Each folder contains the historical raw forecast JSON payloads and a csv with all single results for validation.
 * `upwelling_predictor.py` - The core Python script containing the detection logic.
-* `.github/workflows/run.yml` - The GitHub Actions automation schedule.
+* `upwellingWarning.csv` - contains a result overview
+* `simulate_upwelling.py` - A test script wich generates data wich raise a warning
