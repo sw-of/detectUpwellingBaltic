@@ -135,8 +135,9 @@ def check_for_revocation(archive_dir):
 
 def get_next_raster_base_time(log_path="upwellingWarning.csv"):
     """
-    Versucht, die letzte Basiszeit aus der globalen CSV zu lesen und 6 Stunden aufzuaddieren.
-    Inklusive Sicherheitscheck gegen veraltete Ketten-Stände.
+    Ermittelt die logische Basiszeit für die Berechnung.
+    Stellt sicher, dass die Basiszeit NIEMALS in der Zukunft liegt.
+    Triggert bei manuellem Vorablauf eine Neuberechnung des aktuellen Intervalls.
     """
     now_utc = datetime.now(timezone.utc)
 
@@ -146,37 +147,45 @@ def get_next_raster_base_time(log_path="upwellingWarning.csv"):
             with open(log_path, "r", encoding="utf-8") as f:
                 lines = [line.strip() for line in f.readlines() if line.strip()]
                 if len(lines) >= 2:
-                    last_line = lines[-1].split(",")
-                    last_base_str = last_line[0]
-                    
+                    last_base_str = lines[-1].split(",")[0]
                     last_base_time = datetime.strptime(last_base_str, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+                    
+                    # Geplante nächste Basiszeit im 6h-Takt
                     next_base_time = last_base_time + timedelta(hours=6)
                     
-                    # Sicherheitscheck: Ist die geplante Zeit zu weit in der Vergangenheit?
-                    time_age_hours = (now_utc - next_base_time).total_seconds() / 3600.0
+                    # ANTI-ZUKUNFTS-SCHUTZ (z. B. bei manuellem Doppelstart)
+                    if next_base_time > now_utc:
+                        print(f"⚠️ Manueller/Doppelter Lauf erkannt: Die naechste geplante Basiszeit "
+                              f"({next_base_time.strftime('%Y-%m-%d %H:%M')} UTC) liegt noch in der Zukunft. "
+                              f"Berechne stattdessen die letzte Basiszeit ({last_base_str} UTC) erneut.")
+                        return last_base_time
                     
+                    # SICHERHEITSCHECK: Ist der Rückstand der geplanten Zeit zu groß?
+                    time_age_hours = (now_utc - next_base_time).total_seconds() / 3600.0
                     if time_age_hours > MAX_BASE_TIME_AGE_HOURS:
-                        print(f"⚠️ Sicherheitscheck: Berechnete Basiszeit ({next_base_time.strftime('%Y-%m-%d %H:%M')} UTC) "
-                              f"weist {time_age_hours:.1f}h Rückstand auf. Limit ({MAX_BASE_TIME_AGE_HOURS}h) ueberschritten!")
+                        print(f"⚠️ Sicherheitscheck gegriffen: Die berechnete Basiszeit ({next_base_time.strftime('%Y-%m-%d %H:%M')} UTC) "
+                              f"ist mit {time_age_hours:.1f}h Rueckstand aelter als das Limit von {MAX_BASE_TIME_AGE_HOURS}h!")
                     else:
-                        print(f"🔄 Kontinuierlicher Modus: Letzte Basiszeit war {last_base_str}. Setze fort bei +6h ({next_base_time.strftime('%Y-%m-%d %H:%M')} UTC).")
+                        print(f"🔄 Kontinuierlicher Modus: Letzte Basiszeit war {last_base_str}. "
+                              f"Schalte um auf +6h ({next_base_time.strftime('%Y-%m-%d %H:%M')} UTC).")
                         return next_base_time
         except Exception as e:
             print(f"⚠️ Hinweis beim CSV-Lesen (Wechsle auf Fallback): {e}")
 
-    # 2. FALLBACK: Berechnung anhand der aktuellen Echtzeit (nächstes 6h-Raster)
-    print("⏱️ Fallback-Modus: Synchronisiere Basiszeit neu anhand der aktuellen Echtzeit.")
-    if now_utc.hour < 3:
-        target_hour = 3
-    elif now_utc.hour < 9:
-        target_hour = 9
-    elif now_utc.hour < 15:
-        target_hour = 15
-    elif now_utc.hour < 21:
+    # 2. FALLBACK: Abrunden auf den letzten vergangenen Schritt des 6h-Rasters (03, 09, 15, 21)
+    print("⏱️ Fallback-Modus: Synchronisiere Basiszeit neu anhand der vergangenen Echtzeit.")
+    if now_utc.hour >= 21:
         target_hour = 21
+    elif now_utc.hour >= 15:
+        target_hour = 15
+    elif now_utc.hour >= 9:
+        target_hour = 9
+    elif now_utc.hour >= 3:
+        target_hour = 3
     else:
-        tomorrow = now_utc + timedelta(days=1)
-        return tomorrow.replace(hour=3, minute=0, second=0, microsecond=0)
+        # Wenn es z.B. 02:00 Uhr ist, springe auf 21:00 Uhr des Vortages ab
+        yesterday = now_utc - timedelta(days=1)
+        return yesterday.replace(hour=21, minute=0, second=0, microsecond=0)
     
     return now_utc.replace(hour=target_hour, minute=0, second=0, microsecond=0)
 
