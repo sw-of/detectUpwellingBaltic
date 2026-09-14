@@ -6,8 +6,9 @@ from datetime import datetime, timezone, timedelta
 ATTRIBUTION_NOTICE = """
 ================================================================================
 DATA ATTRIBUTION NOTICE (Open Science Compliance)
-- Meteorological Data: © Deutscher Wetterdienst (DWD)
-- Oceanographic Model: ICON-EU via Open-Meteo API (Licensed under CC-BY 4.0)
+- Predictive Wind Data: © Deutscher Wetterdienst (DWD) – ICON-EU
+- Historical Observations: © Copernicus Climate Change Service (ECMWF) – ERA5-Land
+- Data Aggregation & API Services via Open-Meteo (Licensed under CC-BY 4.0)
 ================================================================================
 """
 
