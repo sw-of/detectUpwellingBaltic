@@ -18,26 +18,31 @@ NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"
 NTFY_LEVEL_ROUTINE = "low"
 NTFY_LEVEL_REVOKE = "default"
 
+# Mapping der 4 Alarmstufen auf die physikalischen ntfy-Prioritäten
 NTFY_LEVEL_LEVELS = {
-    "Stufe 1 (Fernprognose)": "default",
-    "Stufe 2 (Nahe Prognose)": "high",
-    "Stufe 3 (Akute Warnung)": "high",
-    "Stufe 4 (Bestätigt/Messdaten)": "max"
+    "Stufe 1 (Fernprognose)": "default",      # ntfy default (3)
+    "Stufe 2 (Nahe Prognose)": "high",        # ntfy high (4)
+    "Stufe 3 (Akute Warnung)": "high",        # ntfy high (4)
+    "Stufe 4 (Bestätigt/Messdaten)": "max"    # ntfy max (5)
 }
 
-HOURS_WINDOW_SIZE = 36         
-REQUIRED_MIN_PAST_HOURS = 6    
-FORECAST_DAYS_API = 4          
+# Zeiträume für das wandernde Analysefenster
+HOURS_WINDOW_SIZE = 36         # Das feste ozeanografische Untersuchungsfenster (36h)
+REQUIRED_MIN_PAST_HOURS = 6    # Mindestanzahl an Messdaten-Stunden für Stufe 4
+FORECAST_DAYS_API = 4          # Prognosehorizont für die API-Abfrage
 
+# Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
 MIN_WIND_SPEED_MS = 6.0        
-REQUIRED_NET_HOURS = 34        
+REQUIRED_NET_HOURS = 34        # Mindestanzahl aktiver Stunden im 36h-Fenster
 
+# Parameter für Kontinitätsunterbrechungen (Gaps) innerhalb des 36h-Fensters
 ALLOWED_MAX_FLAUTE_HOURS = 3   
 ALLOWED_MAX_DIRECTION_GAP_HOURS = 1 
 
-FLAUTE_SPEED_MS = 4.0          
-REVOKE_DIRECTION_MARGIN_DEG = 10 
+FLAUTE_SPEED_MS = 1.5          
+REVOKE_DIRECTION_MARGIN_DEG = 60 
 
+# Maximale Abweichung der berechneten Basiszeit zur Echtzeit vor einem Hard-Reset
 MAX_BASE_TIME_AGE_HOURS = 12
 # ==============================================================================
 
@@ -136,10 +141,13 @@ def get_next_raster_base_time(log_path="upwellingWarning.csv"):
                     next_base_time = last_base_time + timedelta(hours=6)
                     
                     if next_base_time > now_utc:
-                        print(f"⚠️ Reberechne aktuelle Basiszeit: {last_base_str}")
+                        print(f"⚠️ Doppelter/Manueller Lauf: {next_base_time.strftime('%Y-%m-%d %H:%M')} liegt in der Zukunft. Reberechne {last_base_str}.")
                         return last_base_time
                     
-                    if (now_utc - next_base_time).total_seconds() / 3600.0 <= MAX_BASE_TIME_AGE_HOURS:
+                    time_age_hours = (now_utc - next_base_time).total_seconds() / 3600.0
+                    if time_age_hours > MAX_BASE_TIME_AGE_HOURS:
+                        print(f"⚠️ Kette veraltet ({time_age_hours:.1f}h).")
+                    else:
                         return next_base_time
         except Exception as e:
             print(f"⚠️ CSV-Basiszeit-Fehler: {e}")
@@ -153,7 +161,10 @@ def get_next_raster_base_time(log_path="upwellingWarning.csv"):
     return now_utc.replace(hour=target_hour, minute=0, second=0, microsecond=0)
 
 def expand_wind_event(binary_sequence, gap_types, start_idx, end_idx, max_flaute, max_gegenwind):
+    """Expandiert das gefundene Kernfenster nach vorne und hinten bis die Gaps brechen."""
     total_len = len(binary_sequence)
+    
+    # 1. Vorwärts expandieren (Zukunft)
     current_end = end_idx
     flaute_counter = gegenwind_counter = 0
     while current_end + 1 < total_len:
@@ -167,6 +178,7 @@ def expand_wind_event(binary_sequence, gap_types, start_idx, end_idx, max_flaute
         if flaute_counter > max_flaute or gegenwind_counter > max_gegenwind: break
         current_end = next_idx
 
+    # 2. Rückwärts expandieren (Vergangenheit)
     current_start = start_idx
     flaute_counter = gegenwind_counter = 0
     while current_start - 1 >= 0:
@@ -180,7 +192,8 @@ def expand_wind_event(binary_sequence, gap_types, start_idx, end_idx, max_flaute
         if flaute_counter > max_flaute or gegenwind_counter > max_gegenwind: break
         current_start = prev_idx
         
-    return current_start, current_end, (current_end - current_start) + 1
+    duration_hours = (current_end - current_start) + 1
+    return current_start, current_end, duration_hours
 
 def analyze_predictive_window(data, config, base_time_utc):
     if not data or "hourly" not in data: return "Nein", 0, "Datenfehler: 'hourly' fehlt"
@@ -239,6 +252,7 @@ def analyze_predictive_window(data, config, base_time_utc):
             activation_time_str = parsed_times[start_idx].strftime("%Y-%m-%d %H:%M")
             end_window_idx = start_idx + HOURS_WINDOW_SIZE - 1
             
+            # Dynamische Sturm-Expansion aufrufen
             t_start, t_end, total_duration = expand_wind_event(
                 binary_sequence, gap_types, start_idx, end_window_idx,
                 ALLOWED_MAX_FLAUTE_HOURS, ALLOWED_MAX_DIRECTION_GAP_HOURS
@@ -314,6 +328,7 @@ def main():
         if not file_exists: f.write("base_time_utc," + ",".join(sorted_places) + "\n")
         f.write(f"{base_time_str}," + ",".join([global_summary_data.get(p, "Nein") for p in sorted_places]) + "\n")
                 
+    # Ntfy-Meldungen absenden
     if revoked_locations:
         revoke_msg = f"Folgende aktive Warnungen werden hiermit WIDERRAFEN (Stand Basiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations)
         send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLING-WIDERRUF")
