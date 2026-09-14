@@ -283,6 +283,9 @@ def analyze_predictive_window(data, config, base_time_utc):
     binary_sequence = [0] * total_len
     gap_types = ["Keine Daten"] * total_len
 
+    # ==============================================================================
+    # 1. KLASSIFIZIERUNG DER WIND-ZUSTÄNDE (INKL. KORREKTUR DER BLINDEN ZONE)
+    # ==============================================================================
     for idx in range(total_len):
         s, d = speeds[idx], directions[idx]
         if s is None or d is None: continue
@@ -291,10 +294,26 @@ def analyze_predictive_window(data, config, base_time_utc):
         outside_margin = (d < (config["crit_dir_min"] - REVOKE_DIRECTION_MARGIN_DEG)) or (d > (config["crit_dir_max"] + REVOKE_DIRECTION_MARGIN_DEG))
 
         if speed_ms >= config["min_speed_ms"] and in_sector:
+            # Optimaler Upwelling-Wind
             binary_sequence[idx], gap_types[idx] = 1, "OK"
         else:
-            gap_types[idx] = "Flaute" if speed_ms < FLAUTE_SPEED_MS else ("Gegenwind" if outside_margin else "Schwacher Wind")
+            # Kein optimaler Wind -> Genaue physikalische Ursachen-Ermittlung
+            if speed_ms < config["min_speed_ms"] and in_sector:
+                # Wind kommt aus der richtigen Richtung, ist aber zu schwach fürs Upwelling
+                gap_types[idx] = "Flaute"
+            elif speed_ms < FLAUTE_SPEED_MS:
+                # Absoluter, physikalischer Schwachwind (Richtung ozeanografisch egal)
+                gap_types[idx] = "Flaute"
+            elif outside_margin:
+                # Wind bläst spürbar (>= FLAUTE_SPEED_MS) aus zerstörerischer Gegenrichtung
+                gap_types[idx] = "Gegenwind"
+            else:
+                # Wind liegt in den Toleranzgraden (Margin) knapp außerhalb des Core-Sektors
+                gap_types[idx] = "Schwacher Wind"
 
+    # ==============================================================================
+    # 2. GLEITENDE FENSTERSUCHE (Wandernder 36h-Scan)
+    # ==============================================================================
     start_search_idx = max(0, base_index - (HOURS_WINDOW_SIZE - 1))
     max_search_index = total_len - HOURS_WINDOW_SIZE
     
@@ -315,7 +334,10 @@ def analyze_predictive_window(data, config, base_time_utc):
             else: current_flaute_gap = current_direction_gap = 0
 
         if max_flaute_found > ALLOWED_MAX_FLAUTE_HOURS or max_direction_found > ALLOWED_MAX_DIRECTION_GAP_HOURS: continue
-
+            
+        # ==============================================================================
+        # 3. KERNFENSTER ERFÜLLT -> DYNAMISCHE STURM-EXPANSION
+        # ==============================================================================
         total_net_hours = sum(sub_binary)
         if total_net_hours >= REQUIRED_NET_HOURS:
             activation_time_str = parsed_times[start_idx].strftime("%Y-%m-%d %H:%M")
