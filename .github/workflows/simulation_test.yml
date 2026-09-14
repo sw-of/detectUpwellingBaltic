@@ -1,4 +1,4 @@
-name: Test: simulate active upwelling
+name: Test - simulate active upwelling
 
 on:
   workflow_dispatch:
