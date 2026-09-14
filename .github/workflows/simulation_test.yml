@@ -45,4 +45,4 @@ jobs:
 
     # Der ausgewählte Ort wird hier mit "--location" an Python übergeben
     - name: Execute Simulation
-      run: python run_simulation.py --location "${{ github.event.inputs.test_location }}"
+      run: python simulate_upwelling.py --location "${{ github.event.inputs.test_location }}"
