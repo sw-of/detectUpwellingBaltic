@@ -44,6 +44,10 @@ REVOKE_DIRECTION_MARGIN_DEG = 60
 
 # Maximale Abweichung der berechneten Basiszeit zur Echtzeit vor einem Hard-Reset
 MAX_BASE_TIME_AGE_HOURS = 12
+
+# Abweichungs-Schwellwerte (Modell-Validierung) ---
+ALLOWED_MAX_SPEED_DEV_MS = 2.5     # Ab wie viel m/s Differenz gilt die Abweichung als "stark"
+ALLOWED_MAX_DIR_DEV_DEG = 30       # Ab wie viel Grad Richtungsdifferenz gilt die Abweichung als "stark"
 # ==============================================================================
 
 MONITORED_LOCATIONS = {
@@ -82,15 +86,10 @@ def fetch_all_batch():
     base_url = "https://api.open-meteo.com/v1/forecast"
     latitudes = [str(config["lat"]) for config in MONITORED_LOCATIONS.values()]
     longitudes = [str(config["lon"]) for config in MONITORED_LOCATIONS.values()]
-    
     api_params = {
-        "latitude": ",".join(latitudes), 
-        "longitude": ",".join(longitudes),
-        "hourly": "windspeed_10m,winddirection_10m", 
-        "models": "dwd_icon",
-        "windspeed_unit": "ms",  # NEU: Zwingt die API, direkt m/s zu liefern!
-        "forecast_days": FORECAST_DAYS_API, 
-        "past_days": 2
+        "latitude": ",".join(latitudes), "longitude": ",".join(longitudes),
+        "hourly": "windspeed_10m,winddirection_10m", "models": "dwd_icon",
+        "windspeed_unit": "ms", "forecast_days": FORECAST_DAYS_API, "past_days": 2
     }
     try:
         response = requests.get(base_url, params=api_params, timeout=25)
@@ -101,13 +100,84 @@ def fetch_all_batch():
         print(f"❌ API-Fehler bei Abfrage: {e}")
         return None
 
+def fetch_real_observations_batch(base_time_utc):
+    base_url = "https://archive-api.open-meteo.com/v1/archive"
+    latitudes = [str(config["lat"]) for config in MONITORED_LOCATIONS.values()]
+    longitudes = [str(config["lon"]) for config in MONITORED_LOCATIONS.values()]
+    end_date = base_time_utc.strftime("%Y-%m-%d")
+    start_date = (base_time_utc - timedelta(days=1)).strftime("%Y-%m-%d")
+    api_params = {
+        "latitude": ",".join(latitudes), "longitude": ",".join(longitudes),
+        "start_date": start_date, "end_date": end_date,
+        "hourly": "windspeed_10m,winddirection_10m", "windspeed_unit": "ms"
+    }
+    try:
+        response = requests.get(base_url, params=api_params, timeout=25)
+        response.raise_for_status()
+        results = response.json()
+        return results if isinstance(results, list) else [results]
+    except Exception as e:
+        print(f"⚠️ Warnung: Reale Messdaten konnten nicht geladen werden ({e}).")
+        return None
+
+def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
+    obs_batch = fetch_real_observations_batch(base_time_utc)
+    if not obs_batch:
+        return batch_data, []
+
+    deviated_locations_report = []
+    location_items = list(MONITORED_LOCATIONS.items())
+
+    for idx, single_location_data in enumerate(batch_data):
+        if idx >= len(obs_batch) or idx >= len(location_items): break
+        name, _ = location_items[idx]
+        if "hourly" not in single_location_data or "hourly" not in obs_batch[idx]: continue
+            
+        fc_hourly = single_location_data["hourly"]
+        fc_times, fc_speeds, fc_directions = fc_hourly.get("time", []), fc_hourly.get("windspeed_10m", []), fc_hourly.get("winddirection_10m", [])
+        obs_hourly = obs_batch[idx]["hourly"]
+        obs_times, obs_speeds, obs_directions = obs_hourly.get("time", []), obs_hourly.get("windspeed_10m", []), obs_hourly.get("winddirection_10m", [])
+        
+        obs_map = {t: (s, d) for t, s, d in zip(obs_times, obs_speeds, obs_directions) if t and s is not None and d is not None}
+        max_speed_diff = 0.0
+        max_dir_diff = 0
+        has_strong_deviation = False
+        
+        for f_idx, fc_t_str in enumerate(fc_times):
+            if fc_t_str in obs_map:
+                fc_t_obj = datetime.strptime(fc_t_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+                if fc_t_obj <= base_time_utc:
+                    real_speed, real_dir = obs_map[fc_t_str]
+                    fc_speed, fc_dir = fc_speeds[f_idx], fc_directions[f_idx]
+                    
+                    if fc_speed is not None and fc_dir is not None:
+                        speed_diff = abs(fc_speed - real_speed)
+                        if speed_diff > max_speed_diff: max_speed_diff = speed_diff
+                        
+                        dir_diff = abs(fc_dir - real_dir)
+                        if dir_diff > 180: dir_diff = 360 - dir_diff
+                        if dir_diff > max_dir_diff: max_dir_diff = dir_diff
+                        
+                        if speed_diff > ALLOWED_MAX_SPEED_DEV_MS or dir_diff > ALLOWED_MAX_DIR_DEV_DEG:
+                            has_strong_deviation = True
+                    
+                    fc_speeds[f_idx] = real_speed
+                    fc_directions[f_idx] = real_dir
+                    
+        if has_strong_deviation:
+            deviated_locations_report.append(f"⚠️ {name} (ΔMax: {max_speed_diff:.1f}m/s, {max_dir_diff}°)")
+        single_location_data["hourly"]["windspeed_10m"] = fc_speeds
+        single_location_data["hourly"]["winddirection_10m"] = fc_directions
+        
+    return batch_data, deviated_locations_report
+
 def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
     log_path = os.path.join(archive_dir, "status_log.csv")
     timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     decision = "Ja" if is_upwelling else "Nein"
     clean_msg = status_msg.replace('"', '""')
     log_line = f'{timestamp_utc},{decision},{net_hours},"{clean_msg}"\n'
-    file_exists = os.path.exists(log_path)
+    file_exists = os.path.exists(log_path) and os.path.getsize(log_path) > 0
     with open(log_path, "a", encoding="utf-8") as f:
         if not file_exists:
             f.write("timestamp_utc,upwelling_predicted,net_wind_hours,details\n")
@@ -215,9 +285,7 @@ def analyze_predictive_window(data, config, base_time_utc):
     for idx in range(total_len):
         s, d = speeds[idx], directions[idx]
         if s is None or d is None: continue
-        
-        # Da wir "windspeed_unit": "ms" abfragen, fällt s / 3.6 weg!
-        speed_ms = s 
+        speed_ms = s
         in_sector = config["crit_dir_min"] <= d <= config["crit_dir_max"]
         outside_margin = (d < (config["crit_dir_min"] - REVOKE_DIRECTION_MARGIN_DEG)) or (d > (config["crit_dir_max"] + REVOKE_DIRECTION_MARGIN_DEG))
 
@@ -287,6 +355,16 @@ def main():
         send_ntfy_notification("Kritischer Fehler: Keine API-Daten!", priority="high", title="Systemfehler")
         return
         
+    # --- INJEKTION + ABWEICHUNGSMESSUNG ---
+    batch_data, deviated_locations = inject_real_measurements_and_check_deviations(batch_data, base_time_utc)
+    
+    # Textbaustein für die Modellgüte im ntfy-Report generieren
+    if deviated_locations:
+        dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte wichen stark von der Prognose ab:\n" + "\n".join(deviated_locations)
+    else:
+        dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie gestrige Prognose stimmt perfekt mit den realen Messwerten überein."
+    # -------------------------------------------
+        
     location_items = list(MONITORED_LOCATIONS.items())
 
     for idx, single_location_data in enumerate(batch_data):
@@ -317,6 +395,7 @@ def main():
             else: level, emoji = "Stufe 1 (Fernprognose)", "⏳"
                 
             triggered_by_level[level].append(f"{emoji} {name} (Analysefensterbeginn: {result_status} UTC)\n   ┗ ℹ️ {status_msg}")
+            print(f"🎯 [{name}] {level} detektiert! {status_msg}")
         else:
             if had_active_alert: revoked_locations.append(f"🟢 {name}: {status_msg}")
             print(f"ℹ️ [{name}] {status_msg}")
@@ -328,9 +407,9 @@ def main():
         if not file_exists: f.write("base_time_utc," + ",".join(sorted_places) + "\n")
         f.write(f"{base_time_str}," + ",".join([global_summary_data.get(p, "Nein") for p in sorted_places]) + "\n")
                 
-    # Ntfy-Meldungen absenden
+    # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str)
     if revoked_locations:
-        revoke_msg = f"Folgende aktive Warnungen werden hiermit WIDERRAFEN (Stand Basiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations)
+        revoke_msg = f"Folgende aktive Warnungen werden hiermit WIDERRUFEN (Stand Basiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations) + dev_report_str
         send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLING-WIDERRUF")
 
     total_alerts_sent = 0
@@ -338,11 +417,12 @@ def main():
         locations = triggered_by_level[level_name]
         if locations:
             total_alerts_sent += len(locations)
-            alert_msg = f"Upwelling-Kriterien erfuellt.\nBerechnungs-Basiszeit: {base_time_str} UTC\n\n" + "\n".join(locations)
+            alert_msg = f"Upwelling-Kriterien erfuellt.\nBerechnungs-Basiszeit: {base_time_str} UTC\n\n" + "\n".join(locations) + dev_report_str
             send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
 
     if total_alerts_sent == 0 and not revoked_locations:
-        send_ntfy_notification(f"Routine-Lauf erfolgreich.\nBerechnungs-Basiszeit: {base_time_str} UTC\nKeine Upwelling-Ereignisse detektiert.", priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
+        routine_msg = f"Routine-Lauf erfolgreich.\nBerechnungs-Basiszeit: {base_time_str} UTC\nKeine Upwelling-Ereignisse detektiert." + dev_report_str
+        send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
 
 if __name__ == "__main__":
     main()
