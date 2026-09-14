@@ -198,7 +198,7 @@ def analyze_predictive_window(data, config, base_time_utc):
     if base_index is None: return "Nein", 0, "Fehler: Basiszeit fehlt"
 
     total_len = len(speeds)
-    binary_sequence = * total_len
+    binary_sequence = [0] * total_len
     gap_types = ["Keine Daten"] * total_len
 
     for idx in range(total_len):
