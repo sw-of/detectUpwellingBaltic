@@ -63,7 +63,7 @@ MONITORED_LOCATIONS = {
     "Graal-Müritz": {"lat": 54.26, "lon": 12.23, "crit_dir_min": 240, "crit_dir_max": 290, "min_speed_ms": MIN_WIND_SPEED_MS},
     "Zingst": {"lat": 54.45, "lon": 12.69, "crit_dir_min": 240, "crit_dir_max": 290, "min_speed_ms": MIN_WIND_SPEED_MS},
     "Dranske": {"lat": 54.62, "lon": 13.18, "crit_dir_min": 0,   "crit_dir_max": 70,  "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Sassnitz": {"lat": 54.51, "lon": 13.65 "crit_dir_min": 180, "crit_dir_max": 240, "min_speed_ms": MIN_WIND_SPEED_MS},
+    "Sassnitz": {"lat": 54.51, "lon": 13.65, "crit_dir_min": 180, "crit_dir_max": 240, "min_speed_ms": MIN_WIND_SPEED_MS},
     "Greifswald": {"lat": 54.14, "lon": 13.46, "crit_dir_min": 220, "crit_dir_max": 270, "min_speed_ms": MIN_WIND_SPEED_MS},
     "Heringsdorf": {"lat": 53.97, "lon": 14.17, "crit_dir_min": 220, "crit_dir_max": 280, "min_speed_ms": MIN_WIND_SPEED_MS}
 }
@@ -395,7 +395,7 @@ def main():
             else: level, emoji = "Stufe 1 (Fernprognose)", "⏳"
                 
             triggered_by_level[level].append(f"{emoji} {name} (Analysefensterbeginn: {result_status} UTC)\n   ┗ ℹ️ {status_msg}")
-            print(f"🎯 [{name}] {level} detektiert! {status_msg}")
+            print(f"🎯 [{name}] {level} Erhöhtes Upwelling-Risiko detektiert! {status_msg}")
         else:
             if had_active_alert: revoked_locations.append(f"🟢 {name}: {status_msg}")
             print(f"ℹ️ [{name}] {status_msg}")
@@ -421,7 +421,7 @@ def main():
             send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
 
     if total_alerts_sent == 0 and not revoked_locations:
-        routine_msg = f"Routine-Lauf erfolgreich.\nBerechnungs-Basiszeit: {base_time_str} UTC\nKeine Upwelling-Ereignisse detektiert." + dev_report_str
+        routine_msg = f"Routine-Lauf erfolgreich.\nBerechnungs-Basiszeit: {base_time_str} UTC\nKein erhöhtes Upwelling-Risiko detektiert." + dev_report_str
         send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
 
 if __name__ == "__main__":
