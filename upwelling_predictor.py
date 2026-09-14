@@ -124,7 +124,7 @@ def fetch_real_observations_batch(base_time_utc):
 def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
     obs_batch = fetch_real_observations_batch(base_time_utc)
     if not obs_batch:
-        return batch_data, []
+        return batch_data, "TIMEOUT"
 
     deviated_locations_report = []
     location_items = list(MONITORED_LOCATIONS.items())
@@ -379,11 +379,17 @@ def main():
         return
         
     # --- INJEKTION + ABWEICHUNGSMESSUNG ---
-    batch_data, deviated_locations = inject_real_measurements_and_check_deviations(batch_data, base_time_utc)
+    batch_data, deviation_result = inject_real_measurements_and_check_deviations(batch_data, base_time_utc)
     
-    # Textbaustein für die Modellgüte im ntfy-Report generieren
-    if deviated_locations:
-        dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nAn folgende Orten weichen die Nowcast-Werte stark von der Prognose ab:\n" + "\n".join(deviated_locations)
+    if deviation_result == "TIMEOUT":
+        dev_report_str = (
+            "\n\n⚠️ MODELL-VALIDIERUNG NICHT MÖGLICH:\n"
+            "Die historischen Messdaten (Archive-API) konnten nicht geladen werden.\n"
+            "Die Analyse fuer die Vergangenheit basiert rein auf den gestrigen Prognosen."
+        )
+        print("⚠️ Hinweis: Archive-API nicht erreichbar oder Timeout. Überspringe Validierungs-Report.")
+    elif isinstance(deviation_result, list) and deviation_result:
+        dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte wichen stark von der Prognose ab:\n" + "\n".join(deviation_result)
     else:
         dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie gestrige Prognose stimmt perfekt mit den realen Messwerten überein."
     # -------------------------------------------
