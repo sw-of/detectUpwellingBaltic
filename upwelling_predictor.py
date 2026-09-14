@@ -79,7 +79,7 @@ def get_archive_dir(location_name):
     return os.path.join("archive", safe_name)
 
 def fetch_all_batch():
-    base_url = "https://open-meteo.com"
+    base_url = "https://api.open-meteo.com/v1/forecast"
     latitudes = [str(config["lat"]) for config in MONITORED_LOCATIONS.values()]
     longitudes = [str(config["lon"]) for config in MONITORED_LOCATIONS.values()]
     api_params = {
