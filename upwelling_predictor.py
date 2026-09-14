@@ -90,7 +90,7 @@ def fetch_all_batch():
     api_params = {
         "latitude": ",".join(latitudes), "longitude": ",".join(longitudes),
         "hourly": "windspeed_10m,winddirection_10m", "models": "dwd_icon",
-        "windspeed_unit": "ms", "forecast_days": FORECAST_DAYS_API, "past_days": 2
+        "windspeed_unit": "ms", "forecast_days": FORECAST_DAYS_API, "past_hours": HOURS_WINDOW_SIZE
     }
     try:
         response = requests.get(base_url, params=api_params, timeout=25)
