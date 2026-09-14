@@ -165,7 +165,7 @@ def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
                     fc_directions[f_idx] = real_dir
                     
         if has_strong_deviation:
-            deviated_locations_report.append(f"⚠️ {name} (ΔMax: {max_speed_diff:.1f}m/s, {max_dir_diff}°)")
+            deviated_locations_report.append(f"{name} (ΔMax: {max_speed_diff:.1f}m/s, {max_dir_diff}°)")
         single_location_data["hourly"]["windspeed_10m"] = fc_speeds
         single_location_data["hourly"]["winddirection_10m"] = fc_directions
         
@@ -360,7 +360,7 @@ def main():
     
     # Textbaustein für die Modellgüte im ntfy-Report generieren
     if deviated_locations:
-        dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte wichen stark von der Prognose ab:\n" + "\n".join(deviated_locations)
+        dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nAn folgende Orten weichen die Nowcast-Werte stark von der Prognose ab:\n" + "\n".join(deviated_locations)
     else:
         dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie gestrige Prognose stimmt perfekt mit den realen Messwerten überein."
     # -------------------------------------------
