@@ -160,6 +160,7 @@ def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
                         
                         if speed_diff > ALLOWED_MAX_SPEED_DEV_MS or dir_diff > ALLOWED_MAX_DIR_DEV_DEG:
                             has_strong_deviation += 1
+                            print(f"⚠️ Modellabweichung: Ort {name}, Datum {fc_t_str}, Daten (dwd|ecmwf) (({fc_speed} | {real_speed} mps), ({fc_dir} | {real_dir} °))")
                     
                     fc_speeds[f_idx] = real_speed
                     fc_directions[f_idx] = real_dir
