@@ -30,7 +30,7 @@ NTFY_LEVEL_LEVELS = {
 # Zeiträume für das wandernde Analysefenster
 HOURS_WINDOW_SIZE = 36         # Das feste ozeanografische Untersuchungsfenster (36h)
 REQUIRED_MIN_PAST_HOURS = 6    # Mindestanzahl an Messdaten-Stunden für Stufe 4
-FORECAST_DAYS_API = 5          # Prognosehorizont für die API-Abfrage
+FORECAST_DAYS_API = 4          # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
 MIN_WIND_SPEED_MS = 10.0        
@@ -90,7 +90,7 @@ def fetch_all_batch():
     api_params = {
         "latitude": ",".join(latitudes), "longitude": ",".join(longitudes),
         "hourly": "windspeed_10m,winddirection_10m", "models": "dwd_icon",
-        "windspeed_unit": "ms", "forecast_days": FORECAST_DAYS_API, "past_hours": HOURS_WINDOW_SIZE
+        "windspeed_unit": "ms", "forecast_days": FORECAST_DAYS_API, "past_hours": HOURS_WINDOW_SIZE + MAX_BASE_TIME_AGE_HOURS
     }
     try:
         response = requests.get(base_url, params=api_params, timeout=25)
@@ -108,7 +108,7 @@ def fetch_real_observations_batch(base_time_utc):
     api_params = {
         "latitude": ",".join(latitudes), "longitude": ",".join(longitudes),
         "hourly": "windspeed_10m,winddirection_10m", "models": "ecmwf_ifs",
-        "windspeed_unit": "ms", "forecast_days": 1, "past_hours": HOURS_WINDOW_SIZE
+        "windspeed_unit": "ms", "forecast_days": 1, "past_hours": HOURS_WINDOW_SIZE + MAX_BASE_TIME_AGE_HOURS
     }
     try:
         response = requests.get(base_url, params=api_params, timeout=25)
