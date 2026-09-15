@@ -30,7 +30,7 @@ NTFY_LEVEL_LEVELS = {
 # Zeiträume für das wandernde Analysefenster
 HOURS_WINDOW_SIZE = 36         # Das feste ozeanografische Untersuchungsfenster (36h)
 REQUIRED_MIN_PAST_HOURS = 6    # Mindestanzahl an Messdaten-Stunden für Stufe 4
-FORECAST_DAYS_API = 4          # Prognosehorizont für die API-Abfrage
+FORECAST_DAYS_API = 5          # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
 MIN_WIND_SPEED_MS = 10.0        
@@ -140,14 +140,11 @@ def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
         obs_map = {t: (s, d) for t, s, d in zip(obs_times, obs_speeds, obs_directions) if t and s is not None and d is not None}
         max_speed_diff = 0.0
         max_dir_diff = 0
-        has_strong_deviation = False
+        has_strong_deviation = 0
         
         for f_idx, fc_t_str in enumerate(fc_times):
             if fc_t_str in obs_map:
                 fc_t_obj = datetime.strptime(fc_t_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
-                
-                if fc_t_obj > base_time_utc:
-                    continue
                 
                 if fc_t_obj <= base_time_utc:
                     real_speed, real_dir = obs_map[fc_t_str]
@@ -162,13 +159,13 @@ def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
                         if dir_diff > max_dir_diff: max_dir_diff = dir_diff
                         
                         if speed_diff > ALLOWED_MAX_SPEED_DEV_MS or dir_diff > ALLOWED_MAX_DIR_DEV_DEG:
-                            has_strong_deviation = True
+                            has_strong_deviation += 1
                     
                     fc_speeds[f_idx] = real_speed
                     fc_directions[f_idx] = real_dir
                     
-        if has_strong_deviation:
-            deviated_locations_report.append(f"{name} (ΔMax: {max_speed_diff:.1f}m/s, {max_dir_diff}°)")
+        if has_strong_deviation > 0:
+            deviated_locations_report.append(f"{name} (count: {has_strong_deviation}, ΔMax: {max_speed_diff:.1f}m/s, {max_dir_diff}°)")
         single_location_data["hourly"]["windspeed_10m"] = fc_speeds
         single_location_data["hourly"]["winddirection_10m"] = fc_directions
         
