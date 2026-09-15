@@ -110,7 +110,7 @@ def fetch_real_observations_batch(base_time_utc):
     api_params = {
         "latitude": ",".join(latitudes), "longitude": ",".join(longitudes),
         "hourly": "windspeed_10m,winddirection_10m", "models": "ecmwf_ifs",
-        "windspeed_unit": "ms", "forecast_days": 0, "past_hours": HOURS_WINDOW_SIZE
+        "windspeed_unit": "ms", "forecast_days": 1, "past_hours": HOURS_WINDOW_SIZE
     }
     try:
         response = requests.get(base_url, params=api_params, timeout=25)
@@ -147,6 +147,10 @@ def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
         for f_idx, fc_t_str in enumerate(fc_times):
             if fc_t_str in obs_map:
                 fc_t_obj = datetime.strptime(fc_t_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+                
+                if fc_t_obj > base_time_utc:
+                    continue
+                
                 if fc_t_obj <= base_time_utc:
                     real_speed, real_dir = obs_map[fc_t_str]
                     fc_speed, fc_dir = fc_speeds[f_idx], fc_directions[f_idx]
