@@ -44,7 +44,7 @@ FLAUTE_SPEED_MS = 1.5
 REVOKE_DIRECTION_MARGIN_DEG = 60 
 
 # Maximale Abweichung der berechneten Basiszeit zur Echtzeit vor einem Hard-Reset
-MAX_BASE_TIME_AGE_HOURS = 12
+MAX_BASE_TIME_AGE_HOURS = 48
 
 # Abweichungs-Schwellwerte (Modell-Validierung) ---
 ALLOWED_MAX_SPEED_DEV_MS = 5     # Ab wie viel m/s Differenz gilt die Abweichung als "stark"
@@ -373,102 +373,112 @@ def main():
     }
     revoked_locations, global_summary_data = [], {}
     global_log_path = "upwellingWarning.csv"
-    
-    base_time_utc = get_next_raster_base_time(global_log_path)
-    base_time_str = base_time_utc.strftime("%Y-%m-%d %H:%M")
-    print(f"📊 Berechnungs-Basiszeit: {base_time_str} UTC")
-    
-    batch_data = fetch_all_batch()
-    if not batch_data or not isinstance(batch_data, list):
-        send_ntfy_notification("Kritischer Fehler: Keine API-Daten!", priority="high", title="Systemfehler")
-        return
-        
-    # --- INJEKTION + ABWEICHUNGSMESSUNG ---
-    batch_data, deviation_result = inject_real_measurements_and_check_deviations(batch_data, base_time_utc)
-    
-    if deviation_result == "TIMEOUT":
-        dev_report_str = (
-            "\n\n⚠️ MODELL-VALIDIERUNG NICHT MÖGLICH:\n"
-            "Die historischen Messdaten (Archive-API) konnten nicht geladen werden.\n"
-            "Die Analyse fuer die Vergangenheit basiert rein auf den gestrigen Prognosen."
-        )
-        print("⚠️ Hinweis: Archive-API nicht erreichbar oder Timeout. Überspringe Validierungs-Report.")
-    elif isinstance(deviation_result, list) and deviation_result:
-        dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte wichen stark von der Prognose ab:\n" + "\n".join(deviation_result)
-    else:
-        dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie gestrige Prognose stimmt perfekt mit den realen Messwerten überein."
-    # -------------------------------------------
-        
-    location_items = list(MONITORED_LOCATIONS.items())
 
-    for idx, single_location_data in enumerate(batch_data):
-        if idx >= len(location_items): break
-        name, config = location_items[idx]
-        archive_dir = get_archive_dir(name)
-        os.makedirs(archive_dir, exist_ok=True)
+    i = 1
+    last_base_time_str = "null"
+    while i <= (MAX_BASE_TIME_AGE_HOURS/6)
+        base_time_utc = get_next_raster_base_time(global_log_path)
+        base_time_str = base_time_utc.strftime("%Y-%m-%d %H:%M")
+        if base_time_str = last_base_time_str:
+            print(f"ℹ️ Reberechnung zu {last_base_str} bereits erfolgt. Beende aufholschleife.")
+            break
         
-        had_active_alert = check_for_revocation(archive_dir)
-        try:
-            with open(os.path.join(archive_dir, f"forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json"), "w", encoding="utf-8") as f:
-                json.dump(single_location_data, f, indent=4, ensure_ascii=False)
-            print(f"ℹ️ Stationsarchive-JSON '{archive_dir}/forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json' erfolgreich erstellt.")
-        except Exception as e:
-            print(f"❌ Fehler beim Schreiben der Stationsarchive-JSON: {e}")
+        last_base_time_str = base_time_str
+        print(f"📊 Berechnungs-Basiszeit: {base_time_str} UTC")
+        
+        batch_data = fetch_all_batch()
+        if not batch_data or not isinstance(batch_data, list):
+            send_ntfy_notification("Kritischer Fehler: Keine API-Daten!", priority="high", title="Systemfehler")
+            return
             
-        result_status, total_duration, status_msg = analyze_predictive_window(single_location_data, config, base_time_utc)
+        # --- INJEKTION + ABWEICHUNGSMESSUNG ---
+        batch_data, deviation_result = inject_real_measurements_and_check_deviations(batch_data, base_time_utc)
         
-        is_upwelling = (result_status != "Nein")
-        write_to_tabular_log(archive_dir, is_upwelling, total_duration, status_msg)
-        global_summary_data[name] = result_status
-        
-        if is_upwelling:
-            act_time_utc = datetime.strptime(result_status, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
-            hours_in_past = (base_time_utc - act_time_utc).total_seconds() / 3600.0 if act_time_utc < base_time_utc else 0.0
-            hours_until_event = (act_time_utc - base_time_utc).total_seconds() / 3600.0
-            
-            if hours_in_past >= REQUIRED_MIN_PAST_HOURS: level, emoji = "Stufe 4 (Bestätigt/Messdaten)", "🚨"
-            elif hours_until_event < 48: level, emoji = "Stufe 3 (Akute Warnung)", "🟠"
-            elif hours_until_event < 72: level, emoji = "Stufe 2 (Nahe Prognose)", "🟡"
-            else: level, emoji = "Stufe 1 (Fernprognose)", "⏳"
-                
-            triggered_by_level[level].append(f"{emoji} {name} (Analysefensterbeginn: {result_status} UTC)\n   ┗ ℹ️ {status_msg}")
-            print(f"🎯 [{name}] {level} Erhöhtes Upwelling-Risiko detektiert! {status_msg}")
+        if deviation_result == "TIMEOUT":
+            dev_report_str = (
+                "\n\n⚠️ MODELL-VALIDIERUNG NICHT MÖGLICH:\n"
+                "Die historischen Messdaten (Archive-API) konnten nicht geladen werden.\n"
+                "Die Analyse fuer die Vergangenheit basiert rein auf den gestrigen Prognosen."
+            )
+            print("⚠️ Hinweis: Archive-API nicht erreichbar oder Timeout. Überspringe Validierungs-Report.")
+        elif isinstance(deviation_result, list) and deviation_result:
+            dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte wichen stark von der Prognose ab:\n" + "\n".join(deviation_result)
         else:
-            if had_active_alert: revoked_locations.append(f"🟢 {name}: {status_msg}")
-            print(f"✅ [{name}] {status_msg}")
-                
-    # Globales CSV Log schreiben
-    file_exists = os.path.exists(global_log_path) and os.path.getsize(global_log_path) > 0
-    sorted_places = sorted(list(MONITORED_LOCATIONS.keys()))
-    try:
-        with open(global_log_path, "a", encoding="utf-8") as f:
-            if not file_exists: f.write("base_time_utc," + ",".join(sorted_places) + "\n")
-            f.write(f"{base_time_str}," + ",".join([global_summary_data.get(p, "Nein") for p in sorted_places]) + "\n")
-        print(f"ℹ️ Globale Übersichtstabelle '{global_log_path}' erfolgreich aktualisiert.")
-    except Exception as e:
-        print(f"❌ Fehler beim Schreiben der globalen Übersichtstabelle: {e}")
+            dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie gestrige Prognose stimmt perfekt mit den realen Messwerten überein."
+        # -------------------------------------------
+            
+        location_items = list(MONITORED_LOCATIONS.items())
     
-    # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str) and result prints
-    print("\n------------------ ERGEBNISSE ------------------")
-    if revoked_locations:
-        revoke_msg = f"🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Stand Basiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations) + dev_report_str
-        send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLING-WIDERRUF")
-        print(revoke_msg)
+        for idx, single_location_data in enumerate(batch_data):
+            if idx >= len(location_items): break
+            name, config = location_items[idx]
+            archive_dir = get_archive_dir(name)
+            os.makedirs(archive_dir, exist_ok=True)
+            
+            had_active_alert = check_for_revocation(archive_dir)
+            try:
+                with open(os.path.join(archive_dir, f"forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json"), "w", encoding="utf-8") as f:
+                    json.dump(single_location_data, f, indent=4, ensure_ascii=False)
+                print(f"ℹ️ Stationsarchive-JSON '{archive_dir}/forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json' erfolgreich erstellt.")
+            except Exception as e:
+                print(f"❌ Fehler beim Schreiben der Stationsarchive-JSON: {e}")
+                
+            result_status, total_duration, status_msg = analyze_predictive_window(single_location_data, config, base_time_utc)
+            
+            is_upwelling = (result_status != "Nein")
+            write_to_tabular_log(archive_dir, is_upwelling, total_duration, status_msg)
+            global_summary_data[name] = result_status
+            
+            if is_upwelling:
+                act_time_utc = datetime.strptime(result_status, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+                hours_in_past = (base_time_utc - act_time_utc).total_seconds() / 3600.0 if act_time_utc < base_time_utc else 0.0
+                hours_until_event = (act_time_utc - base_time_utc).total_seconds() / 3600.0
+                
+                if hours_in_past >= REQUIRED_MIN_PAST_HOURS: level, emoji = "Stufe 4 (Bestätigt/Messdaten)", "🚨"
+                elif hours_until_event < 48: level, emoji = "Stufe 3 (Akute Warnung)", "🟠"
+                elif hours_until_event < 72: level, emoji = "Stufe 2 (Nahe Prognose)", "🟡"
+                else: level, emoji = "Stufe 1 (Fernprognose)", "⏳"
+                    
+                triggered_by_level[level].append(f"{emoji} {name} (Analysefensterbeginn: {result_status} UTC)\n   ┗ ℹ️ {status_msg}")
+                print(f"🎯 [{name}] {level} Erhöhtes Upwelling-Risiko detektiert! {status_msg}")
+            else:
+                if had_active_alert: revoked_locations.append(f"🟢 {name}: {status_msg}")
+                print(f"✅ [{name}] {status_msg}")
+                    
+        # Globales CSV Log schreiben
+        file_exists = os.path.exists(global_log_path) and os.path.getsize(global_log_path) > 0
+        sorted_places = sorted(list(MONITORED_LOCATIONS.keys()))
+        try:
+            with open(global_log_path, "a", encoding="utf-8") as f:
+                if not file_exists: f.write("base_time_utc," + ",".join(sorted_places) + "\n")
+                f.write(f"{base_time_str}," + ",".join([global_summary_data.get(p, "Nein") for p in sorted_places]) + "\n")
+            print(f"ℹ️ Globale Übersichtstabelle '{global_log_path}' erfolgreich aktualisiert.")
+        except Exception as e:
+            print(f"❌ Fehler beim Schreiben der globalen Übersichtstabelle: {e}")
+        
+        # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str) and result prints
+        print("\n------------------ ERGEBNISSE ------------------")
+        if revoked_locations:
+            revoke_msg = f"🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Stand Basiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations) + dev_report_str
+            send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLING-WIDERRUF")
+            print(revoke_msg)
+    
+        total_alerts_sent = 0
+        for level_name in ["Stufe 1 (Fernprognose)", "Stufe 2 (Nahe Prognose)", "Stufe 3 (Akute Warnung)", "Stufe 4 (Bestätigt/Messdaten)"]:
+            locations = triggered_by_level[level_name]
+            if locations:
+                total_alerts_sent += len(locations)
+                alert_msg = f"🎯 Upwelling-Kriterien erfuellt.\nℹ️ Berechnungs-Basiszeit: {base_time_str} UTC\n\n" + "\n".join(locations) + dev_report_str
+                send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
+                print(alert_msg)
+    
+        if total_alerts_sent == 0 and not revoked_locations:
+            routine_msg = f"ℹ️ Routine-Lauf erfolgreich.\nℹ️ Berechnungs-Basiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwelling-Risiko detektiert." + dev_report_str
+            send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
+            print(routine_msg)
+        print("------------------------------------------------")
+        i += 1
 
-    total_alerts_sent = 0
-    for level_name in ["Stufe 1 (Fernprognose)", "Stufe 2 (Nahe Prognose)", "Stufe 3 (Akute Warnung)", "Stufe 4 (Bestätigt/Messdaten)"]:
-        locations = triggered_by_level[level_name]
-        if locations:
-            total_alerts_sent += len(locations)
-            alert_msg = f"🎯 Upwelling-Kriterien erfuellt.\nℹ️ Berechnungs-Basiszeit: {base_time_str} UTC\n\n" + "\n".join(locations) + dev_report_str
-            send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
-            print(alert_msg)
-
-    if total_alerts_sent == 0 and not revoked_locations:
-        routine_msg = f"ℹ️ Routine-Lauf erfolgreich.\nℹ️ Berechnungs-Basiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwelling-Risiko detektiert." + dev_report_str
-        send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
-        print(routine_msg)
-    print("------------------------------------------------")
 
 if __name__ == "__main__":
     main()
