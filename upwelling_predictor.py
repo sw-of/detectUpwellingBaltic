@@ -380,7 +380,7 @@ def main():
         base_time_utc = get_next_raster_base_time(global_log_path)
         base_time_str = base_time_utc.strftime("%Y-%m-%d %H:%M")
         if base_time_str == last_base_time_str:
-            print(f"ℹ️ Reberechnung zu {base_time_str} bereits erfolgt. Beende aufholschleife.")
+            print(f"ℹ️ Reberechnung zu {base_time_str} bereits erfolgt. Beende Aufholschleife.")
             break
         
         last_base_time_str = base_time_str
@@ -476,7 +476,7 @@ def main():
             routine_msg = f"ℹ️ Routine-Lauf erfolgreich.\nℹ️ Berechnungs-Basiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwelling-Risiko detektiert." + dev_report_str
             send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
             print(routine_msg)
-        print("------------------------------------------------")
+        print("------------------------------------------------\n")
         i += 1
 
 
