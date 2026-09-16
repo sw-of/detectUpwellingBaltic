@@ -376,7 +376,7 @@ def main():
 
     i = 1
     last_base_time_str = "null"
-    while i <= (MAX_BASE_TIME_AGE_HOURS/6)
+    while i <= (MAX_BASE_TIME_AGE_HOURS/6):
         base_time_utc = get_next_raster_base_time(global_log_path)
         base_time_str = base_time_utc.strftime("%Y-%m-%d %H:%M")
         if base_time_str = last_base_time_str:
