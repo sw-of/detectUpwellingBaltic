@@ -411,7 +411,7 @@ def main():
         try:
             with open(os.path.join(archive_dir, f"forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json"), "w", encoding="utf-8") as f:
                 json.dump(single_location_data, f, indent=4, ensure_ascii=False)
-            print(f"ℹ️ Stationsarchive-JSON '{archive_dir}/forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json' erfolgreich aktualisiert.")
+            print(f"ℹ️ Stationsarchive-JSON '{archive_dir}/forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json' erfolgreich erstellt.")
         except Exception as e:
             print(f"❌ Fehler beim Schreiben der Stationsarchive-JSON: {e}")
             
