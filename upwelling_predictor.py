@@ -179,10 +179,14 @@ def write_to_tabular_log(archive_dir, is_upwelling, net_hours, status_msg):
     clean_msg = status_msg.replace('"', '""')
     log_line = f'{timestamp_utc},{decision},{net_hours},"{clean_msg}"\n'
     file_exists = os.path.exists(log_path) and os.path.getsize(log_path) > 0
-    with open(log_path, "a", encoding="utf-8") as f:
-        if not file_exists:
-            f.write("timestamp_utc,upwelling_predicted,net_wind_hours,details\n")
-        f.write(log_line)
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            if not file_exists:
+                f.write("timestamp_utc,upwelling_predicted,net_wind_hours,details\n")
+            f.write(log_line)
+        print(f"✅ Stationststabelle '{log_path}' erfolgreich aktualisiert.")
+    except Exception as e:
+        print(f"❌ Fehler beim Schreiben der Stationststabelle: {e}")
 
 def check_for_revocation(archive_dir):
     """Absicherung gegen leere CSVs (Verhindert den line 1 column 1 Parser-Fehler)"""
@@ -196,7 +200,8 @@ def check_for_revocation(archive_dir):
             last_line = lines[-1].split(",")
             if len(last_line) >= 2:
                 return last_line[1] == "Ja"
-    except Exception: 
+    except Exception as e: 
+        print(f"⚠️ file operation at check_for_revocation failed: {e}")
         return False
     return False
 
@@ -403,9 +408,12 @@ def main():
         os.makedirs(archive_dir, exist_ok=True)
         
         had_active_alert = check_for_revocation(archive_dir)
-        
-        with open(os.path.join(archive_dir, f"forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json"), "w", encoding="utf-8") as f:
-            json.dump(single_location_data, f, indent=4, ensure_ascii=False)
+        try:
+            with open(os.path.join(archive_dir, f"forecast_{base_time_utc.strftime('%Y%m%d_%H%M')}.json"), "w", encoding="utf-8") as f:
+                json.dump(single_location_data, f, indent=4, ensure_ascii=False)
+            print(f"✅ Stationsarchive-JSON '{archive_dir}' erfolgreich aktualisiert.")
+        except Exception as e:
+            print(f"❌ Fehler beim Schreiben der Stationsarchive-JSON: {e}")
             
         result_status, total_duration, status_msg = analyze_predictive_window(single_location_data, config, base_time_utc)
         
@@ -432,14 +440,20 @@ def main():
     # Globales CSV Log schreiben
     file_exists = os.path.exists(global_log_path) and os.path.getsize(global_log_path) > 0
     sorted_places = sorted(list(MONITORED_LOCATIONS.keys()))
-    with open(global_log_path, "a", encoding="utf-8") as f:
-        if not file_exists: f.write("base_time_utc," + ",".join(sorted_places) + "\n")
-        f.write(f"{base_time_str}," + ",".join([global_summary_data.get(p, "Nein") for p in sorted_places]) + "\n")
-                
-    # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str)
+    try:
+        with open(global_log_path, "a", encoding="utf-8") as f:
+            if not file_exists: f.write("base_time_utc," + ",".join(sorted_places) + "\n")
+            f.write(f"{base_time_str}," + ",".join([global_summary_data.get(p, "Nein") for p in sorted_places]) + "\n")
+        print(f"✅ Globale Übersichtstabelle '{global_log_path}' erfolgreich aktualisiert.")
+    except Exception as e:
+        print(f"❌ Fehler beim Schreiben der globalen Übersichtstabelle: {e}")
+    
+    # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str) and result prints
+    print("\n------------------ ERGEBNISSE ------------------")
     if revoked_locations:
         revoke_msg = f"Folgende aktive Warnungen werden hiermit WIDERRUFEN (Stand Basiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations) + dev_report_str
         send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLING-WIDERRUF")
+        print(revoke_msg)
 
     total_alerts_sent = 0
     for level_name in ["Stufe 1 (Fernprognose)", "Stufe 2 (Nahe Prognose)", "Stufe 3 (Akute Warnung)", "Stufe 4 (Bestätigt/Messdaten)"]:
@@ -448,10 +462,13 @@ def main():
             total_alerts_sent += len(locations)
             alert_msg = f"Upwelling-Kriterien erfuellt.\nBerechnungs-Basiszeit: {base_time_str} UTC\n\n" + "\n".join(locations) + dev_report_str
             send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
+            print(alert_msg)
 
     if total_alerts_sent == 0 and not revoked_locations:
         routine_msg = f"Routine-Lauf erfolgreich.\nBerechnungs-Basiszeit: {base_time_str} UTC\nKein erhöhtes Upwelling-Risiko detektiert." + dev_report_str
         send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
+        print(routine_msg)
+    print("------------------------------------------------")
 
 if __name__ == "__main__":
     main()
