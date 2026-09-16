@@ -379,7 +379,7 @@ def main():
     while i <= (MAX_BASE_TIME_AGE_HOURS/6):
         base_time_utc = get_next_raster_base_time(global_log_path)
         base_time_str = base_time_utc.strftime("%Y-%m-%d %H:%M")
-        if base_time_str = last_base_time_str:
+        if base_time_str == last_base_time_str:
             print(f"ℹ️ Reberechnung zu {last_base_str} bereits erfolgt. Beende aufholschleife.")
             break
         
