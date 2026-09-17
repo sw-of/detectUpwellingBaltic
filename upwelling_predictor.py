@@ -380,7 +380,7 @@ def main():
         base_time_utc = get_next_raster_base_time(global_log_path)
         base_time_str = base_time_utc.strftime("%Y-%m-%d %H:%M")
         if base_time_str == last_base_time_str:
-            print(f"ℹ️ Reberechnung zu {base_time_str} bereits erfolgt. Beende Aufholschleife.")
+            print(f"ℹ️ Berechnung für {base_time_str} bereits erfolgt. Beende Aufholschleife.")
             break
         
         last_base_time_str = base_time_str
