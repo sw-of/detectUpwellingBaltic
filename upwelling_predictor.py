@@ -164,9 +164,10 @@ def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
                     
                     fc_speeds[f_idx] = real_speed
                     fc_directions[f_idx] = real_dir
-                    
-        if has_strong_deviation > 0:
-            deviated_locations_report.append(f"{name} (count: {has_strong_deviation}, ΔMax: {max_speed_diff:.1f}m/s, {max_dir_diff}°)")
+
+        # add notice to ntfy message if in minimum 3 hours are affected
+        if has_strong_deviation > 2:
+            deviated_locations_report.append(f"{name} (Anzahl Stunden: {has_strong_deviation}, ΔMax: {max_speed_diff:.1f}m/s, {max_dir_diff}°)")
         single_location_data["hourly"]["windspeed_10m"] = fc_speeds
         single_location_data["hourly"]["winddirection_10m"] = fc_directions
         
@@ -402,9 +403,9 @@ def main():
             )
             print("⚠️ Hinweis: Archive-API nicht erreichbar oder Timeout. Überspringe Validierungs-Report.")
         elif isinstance(deviation_result, list) and deviation_result:
-            dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte wichen stark von der Prognose ab:\n" + "\n".join(deviation_result)
+            dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte weichen in der Reanalyse (ECMWF) stark und mindestens 3h von der Prognose (DWD) ab:\n" + "\n".join(deviation_result)
         else:
-            dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie gestrige Prognose stimmt perfekt mit den realen Messwerten überein."
+            dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie Prognose der vergangenen Stunden (DWD) stimmt mit der Reanalyse (ECMWF) überein."
         # -------------------------------------------
             
         location_items = list(MONITORED_LOCATIONS.items())
