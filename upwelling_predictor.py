@@ -116,7 +116,7 @@ def fetch_real_observations_batch(base_time_utc):
         results = response.json()
         return results if isinstance(results, list) else [results]
     except Exception as e:
-        print(f"⚠️ Warnung: Reale Messdaten konnten nicht geladen werden ({e}).")
+        print(f"⚠️ Warnung: Reanalysedaten (ECMWF) konnten nicht geladen werden ({e}).")
         return None
 
 def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
@@ -397,15 +397,15 @@ def main():
         
         if deviation_result == "TIMEOUT":
             dev_report_str = (
-                "\n\n⚠️ MODELL-VALIDIERUNG NICHT MÖGLICH:\n"
+                "\n\n⚠️ MODELLVALIDIERUNG NICHT MÖGLICH:\n"
                 "Die historischen Messdaten (Archive-API) konnten nicht geladen werden.\n"
-                "Die Analyse fuer die Vergangenheit basiert rein auf den gestrigen Prognosen."
+                "Die Analyse für die Vergangenheit basiert rein auf den bisherigen Prognosen."
             )
             print("⚠️ Hinweis: Archive-API nicht erreichbar oder Timeout. Überspringe Validierungs-Report.")
         elif isinstance(deviation_result, list) and deviation_result:
-            dev_report_str = "\n\n⚠️ MODELL-ABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte weichen in der Reanalyse (ECMWF) stark und mindestens 3h von der Prognose (DWD) ab:\n" + "\n".join(deviation_result)
+            dev_report_str = "\n\n⚠️ MODELLABWEICHUNG IN DER VERGANGENHEIT:\nFolgende Orte weichen in der Reanalyse (ECMWF) deutlich und für mindestens 3h von der Prognose (DWD) ab:\n" + "\n".join(deviation_result)
         else:
-            dev_report_str = "\n\n✅ MODELL-VALIDIERUNG:\nDie Prognose der vergangenen Stunden (DWD) stimmt mit der Reanalyse (ECMWF) überein."
+            dev_report_str = "\n\n✅ MODELLVALIDIERUNG:\nDie Prognose der vergangenen Stunden (DWD) stimmt mit der Reanalyse (ECMWF) überein."
         # -------------------------------------------
             
         location_items = list(MONITORED_LOCATIONS.items())
@@ -460,8 +460,8 @@ def main():
         # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str) and result prints
         print("\n------------------ ERGEBNISSE ------------------")
         if revoked_locations:
-            revoke_msg = f"🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Stand Basiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations) + dev_report_str
-            send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLING-WIDERRUF")
+            revoke_msg = f"🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Berechnungsbasiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations) + dev_report_str
+            send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLINGWIDERRUF")
             print(revoke_msg)
     
         total_alerts_sent = 0
@@ -469,12 +469,12 @@ def main():
             locations = triggered_by_level[level_name]
             if locations:
                 total_alerts_sent += len(locations)
-                alert_msg = f"🎯 Upwelling-Kriterien erfuellt.\nℹ️ Berechnungs-Basiszeit: {base_time_str} UTC\n\n" + "\n".join(locations) + dev_report_str
+                alert_msg = f"🎯 Upwellingkriterien erfuellt.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n\n" + "\n".join(locations) + dev_report_str
                 send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
                 print(alert_msg)
     
         if total_alerts_sent == 0 and not revoked_locations:
-            routine_msg = f"ℹ️ Routine-Lauf erfolgreich.\nℹ️ Berechnungs-Basiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwelling-Risiko detektiert." + dev_report_str
+            routine_msg = f"ℹ️ Routinelauf erfolgreich.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwellingrisiko detektiert." + dev_report_str
             send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
             print(routine_msg)
         print("------------------------------------------------\n")
