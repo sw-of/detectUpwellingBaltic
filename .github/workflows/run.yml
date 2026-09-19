@@ -2,7 +2,7 @@ name: Automated Upwelling Predictor
 
 on:
   schedule:
-    - cron: '23 3,9,15,21 * * *'
+    - cron: '54 0,8,13,19 * * *'
   workflow_dispatch:
 
 permissions:
