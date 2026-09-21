@@ -33,7 +33,8 @@ REQUIRED_MIN_PAST_HOURS = 6    # Mindestanzahl an Messdaten-Stunden für Stufe 4
 FORECAST_DAYS_API = 5          # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
-MIN_WIND_SPEED_MS = 8.0        
+MIN_WIND_SPEED_MS_COAST = 6.0  # Mindest Windgeschwindigkeit offene Kueste
+MIN_WIND_SPEED_MS_FJORD = 4.0  # Mindest Windgeschwindigkeit Foerde/Fjoerde
 REQUIRED_NET_HOURS = 33        # Mindestanzahl aktiver Stunden im 36h-Fenster
 
 # Parameter für Kontinitätsunterbrechungen (Gaps) innerhalb des 36h-Fensters
@@ -47,26 +48,26 @@ REVOKE_DIRECTION_MARGIN_DEG = 60
 MAX_BASE_TIME_AGE_HOURS = 48
 
 # Abweichungs-Schwellwerte (Modell-Validierung) ---
-ALLOWED_MAX_SPEED_DEV_MS = 4   # Ab wie viel m/s Differenz gilt die Abweichung als "stark"
+ALLOWED_MAX_SPEED_DEV_MS = 3   # Ab wie viel m/s Differenz gilt die Abweichung als "stark"
 ALLOWED_MAX_DIR_DEV_DEG = 60   # Ab wie viel Grad Richtungsdifferenz gilt die Abweichung als "stark"
 # ==============================================================================
 
 MONITORED_LOCATIONS = {
-    "Flensburg": {"lat": 54.82, "lon": 9.44, "crit_dir_min": 210, "crit_dir_max": 280, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Maasholm": {"lat": 54.67, "lon": 10.04, "crit_dir_min": 160, "crit_dir_max": 280, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Eckernförde": {"lat": 54.46, "lon": 9.88, "crit_dir_min": 210, "crit_dir_max": 280, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Kiel": {"lat": 54.35, "lon": 10.16, "crit_dir_min": 160, "crit_dir_max": 240, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Heiligenhafen": {"lat": 54.39, "lon": 10.98, "crit_dir_min": 80,  "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Travemünde": {"lat": 53.97, "lon": 10.90, "crit_dir_min": 60, "crit_dir_max": 225, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Wismar": {"lat": 53.95, "lon": 11.41, "crit_dir_min": 100, "crit_dir_max": 200, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Kühlungsborn": {"lat": 54.16, "lon": 11.77, "crit_dir_min": 60, "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Warnemünde": {"lat": 54.18, "lon": 12.07, "crit_dir_min": 60, "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Graal-Müritz": {"lat": 54.26, "lon": 12.23, "crit_dir_min": 30, "crit_dir_max": 160, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Zingst": {"lat": 54.45, "lon": 12.69, "crit_dir_min": 60, "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Dranske": {"lat": 54.62, "lon": 13.18, "crit_dir_min": 40,   "crit_dir_max": 150,  "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Sassnitz": {"lat": 54.51, "lon": 13.65, "crit_dir_min": 220, "crit_dir_max": 330, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Greifswald": {"lat": 54.14, "lon": 13.46, "crit_dir_min": 240, "crit_dir_max": 300, "min_speed_ms": MIN_WIND_SPEED_MS},
-    "Heringsdorf": {"lat": 53.97, "lon": 14.17, "crit_dir_min": 100, "crit_dir_max": 230, "min_speed_ms": MIN_WIND_SPEED_MS}
+    "Flensburg": {"lat": 54.82, "lon": 9.44, "crit_dir_min": 210, "crit_dir_max": 280, "min_speed_ms": MIN_WIND_SPEED_MS_FJORD},
+    "Maasholm": {"lat": 54.67, "lon": 10.04, "crit_dir_min": 160, "crit_dir_max": 280, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Eckernförde": {"lat": 54.46, "lon": 9.88, "crit_dir_min": 210, "crit_dir_max": 280, "min_speed_ms": MIN_WIND_SPEED_MS_FJORD},
+    "Kiel": {"lat": 54.35, "lon": 10.16, "crit_dir_min": 160, "crit_dir_max": 240, "min_speed_ms": MIN_WIND_SPEED_MS_FJORD},
+    "Heiligenhafen": {"lat": 54.39, "lon": 10.98, "crit_dir_min": 80,  "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Travemünde": {"lat": 53.97, "lon": 10.90, "crit_dir_min": 60, "crit_dir_max": 225, "min_speed_ms": MIN_WIND_SPEED_MS_FJORD},
+    "Wismar": {"lat": 53.95, "lon": 11.41, "crit_dir_min": 100, "crit_dir_max": 200, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Kühlungsborn": {"lat": 54.16, "lon": 11.77, "crit_dir_min": 60, "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Warnemünde": {"lat": 54.18, "lon": 12.07, "crit_dir_min": 60, "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Graal-Müritz": {"lat": 54.26, "lon": 12.23, "crit_dir_min": 30, "crit_dir_max": 160, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Zingst": {"lat": 54.45, "lon": 12.69, "crit_dir_min": 60, "crit_dir_max": 190, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Dranske": {"lat": 54.62, "lon": 13.18, "crit_dir_min": 40,   "crit_dir_max": 150,  "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Sassnitz": {"lat": 54.51, "lon": 13.65, "crit_dir_min": 220, "crit_dir_max": 330, "min_speed_ms": MIN_WIND_SPEED_MS_COAST},
+    "Greifswald": {"lat": 54.14, "lon": 13.46, "crit_dir_min": 240, "crit_dir_max": 300, "min_speed_ms": MIN_WIND_SPEED_MS_FJORD},
+    "Heringsdorf": {"lat": 53.97, "lon": 14.17, "crit_dir_min": 100, "crit_dir_max": 230, "min_speed_ms": MIN_WIND_SPEED_MS_COAST}
 }
 
 def send_ntfy_notification(message, priority="default", title="Upwelling Predictor"):
