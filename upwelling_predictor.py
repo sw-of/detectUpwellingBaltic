@@ -459,24 +459,25 @@ def main():
         
         # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str) and result prints
         print("\n------------------ ERGEBNISSE ------------------")
-        if revoked_locations:
-            revoke_msg = f"🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Berechnungsbasiszeit: {base_time_str} UTC):\n\n" + "\n".join(revoked_locations) + dev_report_str
-            send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="UPWELLINGWIDERRUF")
-            print(revoke_msg)
-    
         total_alerts_sent = 0
         for level_name in ["Stufe 1 (Fernprognose)", "Stufe 2 (Nahe Prognose)", "Stufe 3 (Akute Warnung)", "Stufe 4 (Bestätigt/Messdaten)"]:
             locations = triggered_by_level[level_name]
             if locations:
                 total_alerts_sent += len(locations)
-                alert_msg = f"🎯 Upwellingkriterien erfuellt.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n\n" + "\n".join(locations) + dev_report_str
+                alert_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n🎯 Upwellingkriterien erfüllt.\n" + "\n".join(locations) + dev_report_str
                 send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
                 print(alert_msg)
     
         if total_alerts_sent == 0 and not revoked_locations:
-            routine_msg = f"ℹ️ Routinelauf erfolgreich.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwellingrisiko detektiert." + dev_report_str
-            send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Routine-Check Ostsee")
+            routine_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwellingrisiko detektiert." + dev_report_str
+            send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Upwelling-Check Ostsee")
             print(routine_msg)
+
+        if revoked_locations:
+            revoke_msg = f"\n🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Berechnungsbasiszeit: {base_time_str} UTC):\n" + "\n".join(revoked_locations) + dev_report_str
+            send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="Upwelling-Widerruf")
+            print(revoke_msg)
+            
         print("------------------------------------------------\n")
         i += 1
 
