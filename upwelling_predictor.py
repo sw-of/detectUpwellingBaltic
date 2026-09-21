@@ -24,18 +24,18 @@ NTFY_LEVEL_LEVELS = {
     "Stufe 1 (Fernprognose)": "default",      # ntfy default (3)
     "Stufe 2 (Nahe Prognose)": "high",        # ntfy high (4)
     "Stufe 3 (Akute Warnung)": "high",        # ntfy high (4)
-    "Stufe 4 (Messdatenbasiert)": "max"    # ntfy max (5)
+    "Stufe 4 (Messdatenbasiert)": "max"       # ntfy max (5)
 }
 
 # Zeiträume für das wandernde Analysefenster
-HOURS_WINDOW_SIZE = 36         # Das feste ozeanografische Untersuchungsfenster (36h)
-REQUIRED_MIN_PAST_HOURS = 6    # Mindestanzahl an Messdaten-Stunden für Stufe 4
-FORECAST_DAYS_API = 5          # Prognosehorizont für die API-Abfrage
+HOURS_WINDOW_SIZE = 36             # Das feste ozeanografische Untersuchungsfenster (36h)
+REQUIRED_MIN_PAST_HOURS = 6        # Mindestanzahl an Messdaten-Stunden für Stufe 4
+FORECAST_DAYS_API = 5              # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
-MIN_WIND_SPEED_MS_COAST = 6.0  # Mindest Windgeschwindigkeit offene Kueste
-MIN_WIND_SPEED_MS_FJORD = 4.0  # Mindest Windgeschwindigkeit Foerde/Fjoerde
-REQUIRED_NET_HOURS = 33        # Mindestanzahl aktiver Stunden im 36h-Fenster
+MIN_WIND_SPEED_MS_COAST = 6.0      # Mindest Windgeschwindigkeit offene Kueste
+MIN_WIND_SPEED_MS_FJORD = 4.0      # Mindest Windgeschwindigkeit Foerde/Fjoerde
+REQUIRED_NET_HOURS = 33            # Mindestanzahl aktiver Stunden im 36h-Fenster
 
 # Parameter für Kontinitätsunterbrechungen (Gaps) innerhalb des 36h-Fensters
 ALLOWED_MAX_FLAUTE_HOURS = 2   
@@ -48,8 +48,9 @@ REVOKE_DIRECTION_MARGIN_DEG = 60
 MAX_BASE_TIME_AGE_HOURS = 48
 
 # Abweichungs-Schwellwerte (Modell-Validierung) ---
-ALLOWED_MAX_SPEED_DEV_MS = 3   # Ab wie viel m/s Differenz gilt die Abweichung als "stark"
-ALLOWED_MAX_DIR_DEV_DEG = 60   # Ab wie viel Grad Richtungsdifferenz gilt die Abweichung als "stark"
+ALLOWED_MAX_SPEED_DEV_OFF = 2      # Ab welcher Differenz gilt die Abweichung der Windgeschwindigkeit als "deutlich"
+ALLOWED_MAX_SPEED_DEV_FAC = 0.15   # Ab welcher Differenz gilt die Abweichung der Windgeschwindigkeit als "deutlich"
+ALLOWED_MAX_DIR_DEV_DEG = 60       # Ab wie viel Grad Richtungsdifferenz gilt die Abweichung als "deutlich"
 # ==============================================================================
 
 MONITORED_LOCATIONS = {
@@ -159,7 +160,7 @@ def inject_real_measurements_and_check_deviations(batch_data, base_time_utc):
                         if dir_diff > 180: dir_diff = 360 - dir_diff
                         if dir_diff > max_dir_diff: max_dir_diff = dir_diff
                         
-                        if speed_diff > ALLOWED_MAX_SPEED_DEV_MS or dir_diff > ALLOWED_MAX_DIR_DEV_DEG:
+                        if speed_diff > ALLOWED_MAX_SPEED_DEV_OFF + ALLOWED_MAX_SPEED_DEV_FAC * fc_speed or dir_diff > ALLOWED_MAX_DIR_DEV_DEG:
                             has_strong_deviation += 1
                             print(f"⚠️ Modellabweichung: In {name} am {fc_t_str} mit folgenden Daten (dwd|ecmwf): (({fc_speed} | {real_speed} m/s), ({fc_dir} | {real_dir} °))")
                     
