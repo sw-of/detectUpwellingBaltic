@@ -436,7 +436,7 @@ def main():
                 hours_in_past = (base_time_utc - act_time_utc).total_seconds() / 3600.0 if act_time_utc < base_time_utc else 0.0
                 hours_until_event = (act_time_utc - base_time_utc).total_seconds() / 3600.0
                 
-                if hours_in_past >= REQUIRED_MIN_PAST_HOURS: level, emoji = "Stufe 4 (Bestätigt/Messdaten)", "🚨"
+                if hours_in_past >= REQUIRED_MIN_PAST_HOURS: level, emoji = "Stufe 4 (Messdatenbasiert)", "🚨"
                 elif hours_until_event < 48: level, emoji = "Stufe 3 (Akute Warnung)", "🟠"
                 elif hours_until_event < 72: level, emoji = "Stufe 2 (Nahe Prognose)", "🟡"
                 else: level, emoji = "Stufe 1 (Fernprognose)", "⏳"
@@ -461,11 +461,11 @@ def main():
         # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str) and result prints
         print("\n------------------ ERGEBNISSE ------------------")
         total_alerts_sent = 0
-        for level_name in ["Stufe 1 (Fernprognose)", "Stufe 2 (Nahe Prognose)", "Stufe 3 (Akute Warnung)", "Stufe 4 (Bestätigt/Messdaten)"]:
+        for level_name in ["Stufe 1 (Fernprognose)", "Stufe 2 (Nahe Prognose)", "Stufe 3 (Akute Warnung)", "Stufe 4 (Messdatenbasiert)"]:
             locations = triggered_by_level[level_name]
             if locations:
                 total_alerts_sent += len(locations)
-                alert_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n🎯 Upwellingkriterien erfüllt.\n" + "\n".join(locations) + dev_report_str
+                alert_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n🎯 Erhöhtes Upwelling-Risiko detektiert!\n\n" + "\n".join(locations) + dev_report_str
                 send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
                 print(alert_msg)
     
