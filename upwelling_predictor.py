@@ -24,7 +24,7 @@ NTFY_LEVEL_LEVELS = {
     "Stufe 1 (Fernprognose)": "default",      # ntfy default (3)
     "Stufe 2 (Nahe Prognose)": "high",        # ntfy high (4)
     "Stufe 3 (Akute Warnung)": "high",        # ntfy high (4)
-    "Stufe 4 (Bestätigt/Messdaten)": "max"    # ntfy max (5)
+    "Stufe 4 (Messdatenbasiert)": "max"    # ntfy max (5)
 }
 
 # Zeiträume für das wandernde Analysefenster
@@ -371,7 +371,7 @@ def main():
     print(ATTRIBUTION_NOTICE)
     triggered_by_level = {
         "Stufe 1 (Fernprognose)": [], "Stufe 2 (Nahe Prognose)": [],
-        "Stufe 3 (Akute Warnung)": [], "Stufe 4 (Bestätigt/Messdaten)": []
+        "Stufe 3 (Akute Warnung)": [], "Stufe 4 (Messdatenbasiert)": []
     }
     revoked_locations, global_summary_data = [], {}
     global_log_path = "upwellingWarning.csv"
