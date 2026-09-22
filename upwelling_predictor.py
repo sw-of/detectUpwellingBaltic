@@ -470,7 +470,7 @@ def main():
                 send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
                 print(alert_msg)
     
-        if total_alerts_sent == 0 and not revoked_locations:
+        if total_alerts_sent == 0:
             routine_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwellingrisiko detektiert." + dev_report_str
             send_ntfy_notification(routine_msg, priority=NTFY_LEVEL_ROUTINE, title="Upwelling-Check Ostsee")
             print(routine_msg)
