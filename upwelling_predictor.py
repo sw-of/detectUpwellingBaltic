@@ -33,15 +33,15 @@ REQUIRED_MIN_PAST_HOURS = 6        # Mindestanzahl an Messdaten-Stunden für Stu
 FORECAST_DAYS_API = 5              # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
-MIN_WIND_SPEED_MS_COAST = 6.0      # Mindest Windgeschwindigkeit offene Kueste
-MIN_WIND_SPEED_MS_FJORD = 4.0      # Mindest Windgeschwindigkeit Foerde/Fjoerde
-REQUIRED_NET_HOURS = 33            # Mindestanzahl aktiver Stunden im 36h-Fenster
+MIN_WIND_SPEED_MS_COAST = 3.5      # Mindest Windgeschwindigkeit offene Kueste
+MIN_WIND_SPEED_MS_FJORD = 3.0      # Mindest Windgeschwindigkeit Foerde/Fjoerde
+REQUIRED_NET_HOURS = 32            # Mindestanzahl aktiver Stunden im 36h-Fenster
 
 # Parameter für Kontinitätsunterbrechungen (Gaps) innerhalb des 36h-Fensters
-ALLOWED_MAX_FLAUTE_HOURS = 2   
+ALLOWED_MAX_FLAUTE_HOURS = 3   
 ALLOWED_MAX_DIRECTION_GAP_HOURS = 1 
 
-FLAUTE_SPEED_MS = 1.5          
+FLAUTE_SPEED_MS = 1.0          
 REVOKE_DIRECTION_MARGIN_DEG = 60 
 
 # Maximale Abweichung der berechneten Basiszeit zur Echtzeit vor einem Hard-Reset
@@ -306,12 +306,12 @@ def analyze_predictive_window(data, config, base_time_utc):
             binary_sequence[idx], gap_types[idx] = 1, "OK"
         else:
             # Kein optimaler Wind -> Genaue physikalische Ursachen-Ermittlung
-            if speed_ms < config["min_speed_ms"] and in_sector:
-                # Wind kommt aus der richtigen Richtung, ist aber zu schwach fürs Upwelling
-                gap_types[idx] = "Flaute"
-            elif speed_ms < FLAUTE_SPEED_MS:
+            if speed_ms < FLAUTE_SPEED_MS:
                 # Absoluter, physikalischer Schwachwind (Richtung ozeanografisch egal)
-                gap_types[idx] = "Flaute"
+                gap_types[idx] = "Flaute"    
+            elif speed_ms < config["min_speed_ms"] and in_sector:
+                # Wind kommt aus der richtigen Richtung, ist aber zu schwach fürs Upwelling
+                gap_types[idx] = "Schwacher Wind"
             elif outside_margin:
                 # Wind bläst spürbar (>= FLAUTE_SPEED_MS) aus zerstörerischer Gegenrichtung
                 gap_types[idx] = "Gegenwind"
@@ -336,6 +336,7 @@ def analyze_predictive_window(data, config, base_time_utc):
             if val == 0:
                 if cause == "Flaute": current_flaute_gap, current_direction_gap = current_flaute_gap + 1, 0
                 elif cause == "Gegenwind": current_direction_gap, current_flaute_gap = current_direction_gap + 1, 0
+                elif cause == "Schwacher Wind": current_flaute_gap, current_direction_gap = current_flaute_gap + 0.5, current_direction_gap + 0.25
                 else: current_flaute_gap, current_direction_gap = current_flaute_gap + 1, current_direction_gap + 1
                 if current_flaute_gap > max_flaute_found: max_flaute_found = current_flaute_gap
                 if current_direction_gap > max_direction_found: max_direction_found = current_direction_gap
