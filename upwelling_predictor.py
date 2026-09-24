@@ -488,7 +488,7 @@ def main():
             print(routine_msg)
 
         if revoked_locations:
-            revoke_msg = f"\n🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Berechnungsbasiszeit: {base_time_str} UTC):\n" + "\n".join(revoked_locations) + dev_report_str
+            revoke_msg = f"\n🟢 Folgende aktive Warnungen werden hiermit WIDERRUFEN (Berechnungsbasiszeit: {base_time_str} UTC):\n" + "\n".join(revoked_locations)
             send_ntfy_notification(revoke_msg, priority=NTFY_LEVEL_REVOKE, title="Upwelling-Widerruf")
             print(revoke_msg)
             
