@@ -15,8 +15,8 @@ DATA ATTRIBUTION NOTICE (Open Science Compliance)
 # ==============================================================================
 # DYNAMISCHE PARAMETER (Wissenschaftliche Konfiguration)
 # ==============================================================================
-# NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"  #real notification channel
-NTFY_TOPIC = "HyFiVe_testchannel"           #channel for test purposes
+NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"  #real notification channel
+# NTFY_TOPIC = "HyFiVe_testchannel"           #channel for test purposes
 NTFY_LEVEL_ROUTINE = "low"
 NTFY_LEVEL_REVOKE = "default"
 
@@ -373,7 +373,7 @@ def analyze_predictive_window(data, config, base_time_utc):
             extended_end_str = parsed_times[t_end].strftime("%Y-%m-%d %H:%M")
             
             status_msg = (
-                f"Reale Event-Dauer: {total_duration}h ({extended_net_hours}h Wind aktiv (⌀: {round(extended_hours_mean_speed,1)}m/s, {round(extended_hours_mean_dir)}°)) "
+                f"Event-Dauer: {total_duration}h ({extended_net_hours}h Wind aktiv (⌀: {round(extended_hours_mean_speed,1)}m/s, {round(extended_hours_mean_dir)}°)) "
                 f"von {extended_start_str} bis {extended_end_str} UTC"
             )
             return activation_time_str, total_duration, status_msg
