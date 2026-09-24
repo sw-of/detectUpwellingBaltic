@@ -291,6 +291,7 @@ def analyze_predictive_window(data, config, base_time_utc):
     total_len = len(speeds)
     binary_sequence = [0] * total_len
     speed_sequence = [0] * total_len
+    dir_sequence = [0] * total_len
     gap_types = ["Keine Daten"] * total_len
 
     # ==============================================================================
@@ -304,6 +305,7 @@ def analyze_predictive_window(data, config, base_time_utc):
         outside_margin = (d < (config["crit_dir_min"] - REVOKE_DIRECTION_MARGIN_DEG)) or (d > (config["crit_dir_max"] + REVOKE_DIRECTION_MARGIN_DEG))
 
         speed_sequence[idx] = speed_ms
+        dir_sequence[idx] = d
         
         if speed_ms >= config["min_speed_ms"] and in_sector:
             # Optimaler Upwelling-Wind
@@ -366,11 +368,12 @@ def analyze_predictive_window(data, config, base_time_utc):
             )
             extended_net_hours = sum(binary_sequence[t_start : t_end + 1])
             extended_hours_mean_speed = sum(speed_sequence[t_start : t_end + 1])/extended_net_hours
+            extended_hours_mean_dir = sum(dir_sequence[t_start : t_end + 1])/extended_net_hours
             extended_start_str = parsed_times[t_start].strftime("%Y-%m-%d %H:%M")
             extended_end_str = parsed_times[t_end].strftime("%Y-%m-%d %H:%M")
             
             status_msg = (
-                f"Reale Event-Dauer: {total_duration}h ({extended_net_hours}h Wind aktiv (⌀ {extended_hours_mean_speed}m/s)) "
+                f"Reale Event-Dauer: {total_duration}h ({extended_net_hours}h Wind aktiv (⌀: {round(extended_hours_mean_speed,1)}m/s, {round(extended_hours_mean_dir,0)}°)) "
                 f"von {extended_start_str} bis {extended_end_str} UTC"
             )
             return activation_time_str, total_duration, status_msg
