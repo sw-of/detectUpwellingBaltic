@@ -15,7 +15,8 @@ DATA ATTRIBUTION NOTICE (Open Science Compliance)
 # ==============================================================================
 # DYNAMISCHE PARAMETER (Wissenschaftliche Konfiguration)
 # ==============================================================================
-NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"
+# NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"  #real notification channel
+NTFY_TOPIC = "HyFiVe_testchannel"           #channel for test purposes
 NTFY_LEVEL_ROUTINE = "low"
 NTFY_LEVEL_REVOKE = "default"
 
@@ -33,8 +34,8 @@ REQUIRED_MIN_PAST_HOURS = 6        # Mindestanzahl an Messdaten-Stunden für Stu
 FORECAST_DAYS_API = 5              # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
-MIN_WIND_SPEED_MS_COAST = 3.5      # Mindest Windgeschwindigkeit offene Kueste
-MIN_WIND_SPEED_MS_FJORD = 3.0      # Mindest Windgeschwindigkeit Foerde/Fjoerde
+MIN_WIND_SPEED_MS_COAST = 4.0      # Mindest Windgeschwindigkeit offene Kueste
+MIN_WIND_SPEED_MS_FJORD = 3.5      # Mindest Windgeschwindigkeit Foerde/Fjoerde
 REQUIRED_NET_HOURS = 32            # Mindestanzahl aktiver Stunden im 36h-Fenster
 
 # Parameter für Kontinitätsunterbrechungen (Gaps) innerhalb des 36h-Fensters
@@ -317,7 +318,7 @@ def analyze_predictive_window(data, config, base_time_utc):
                 gap_types[idx] = "Gegenwind"
             else:
                 # Wind liegt in den Toleranzgraden (Margin) knapp außerhalb des Core-Sektors
-                gap_types[idx] = "Schwacher Wind"
+                gap_types[idx] = "Abdrehender Wind"
 
     # ==============================================================================
     # 2. GLEITENDE FENSTERSUCHE (Wandernder 36h-Scan)
@@ -334,9 +335,10 @@ def analyze_predictive_window(data, config, base_time_utc):
         current_flaute_gap = current_direction_gap = max_flaute_found = max_direction_found = 0
         for val, cause in zip(sub_binary, sub_gaps):
             if val == 0:
-                if cause == "Flaute": current_flaute_gap, current_direction_gap = current_flaute_gap + 1, 0
-                elif cause == "Gegenwind": current_direction_gap, current_flaute_gap = current_direction_gap + 1, 0
-                elif cause == "Schwacher Wind": current_flaute_gap, current_direction_gap = current_flaute_gap + 0.5, current_direction_gap + 0.25
+                if cause == "Flaute": current_flaute_gap = current_flaute_gap + 1
+                elif cause == "Gegenwind": current_direction_gap = current_direction_gap + 1
+                elif cause == "Schwacher Wind": current_flaute_gap = current_flaute_gap + 0.5
+                elif cause == "Abdrehender Wind": current_direction_gap = current_direction_gap + 0.333
                 else: current_flaute_gap, current_direction_gap = current_flaute_gap + 1, current_direction_gap + 1
                 if current_flaute_gap > max_flaute_found: max_flaute_found = current_flaute_gap
                 if current_direction_gap > max_direction_found: max_direction_found = current_direction_gap
