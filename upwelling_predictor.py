@@ -34,8 +34,8 @@ REQUIRED_MIN_PAST_HOURS = 6        # Mindestanzahl an Messdaten-Stunden für Stu
 FORECAST_DAYS_API = 5              # Prognosehorizont für die API-Abfrage
 
 # Globale Kriterien für optimalen Upwelling-Wind im 36h-Fenster
-MIN_WIND_SPEED_MS_COAST = 4.0      # Mindest Windgeschwindigkeit offene Kueste
-MIN_WIND_SPEED_MS_FJORD = 3.5      # Mindest Windgeschwindigkeit Foerde/Fjoerde
+MIN_WIND_SPEED_MS_COAST = 3.5      # Mindest Windgeschwindigkeit offene Kueste
+MIN_WIND_SPEED_MS_FJORD = 3.0      # Mindest Windgeschwindigkeit Foerde/Fjoerde
 REQUIRED_NET_HOURS = 32            # Mindestanzahl aktiver Stunden im 36h-Fenster
 
 # Parameter für Kontinitätsunterbrechungen (Gaps) innerhalb des 36h-Fensters
