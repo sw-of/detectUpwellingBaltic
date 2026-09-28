@@ -382,11 +382,6 @@ def analyze_predictive_window(data, config, base_time_utc):
 
 def main():
     print(ATTRIBUTION_NOTICE)
-    triggered_by_level = {
-        "Stufe 1 (Fernprognose)": [], "Stufe 2 (Nahe Prognose)": [],
-        "Stufe 3 (Akute Warnung)": [], "Stufe 4 (Messdatenbasiert)": []
-    }
-    revoked_locations, global_summary_data = [], {}
     global_log_path = "upwellingWarning.csv"
 
     i = 1
@@ -397,6 +392,14 @@ def main():
         if base_time_str == last_base_time_str:
             print(f"ℹ️ Berechnung für {base_time_str} bereits erfolgt. Beende Aufholschleife.")
             break
+        else:
+            triggered_by_level = {
+                "Stufe 1 (Fernprognose)": [], "Stufe 2 (Nahe Prognose)": [],
+                "Stufe 3 (Akute Warnung)": [], "Stufe 4 (Messdatenbasiert)": []
+            }
+            revoked_locations, global_summary_data = [], {}
+            
+            
         
         last_base_time_str = base_time_str
         print(f"📊 Berechnungs-Basiszeit: {base_time_str} UTC")
