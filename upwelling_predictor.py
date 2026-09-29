@@ -15,8 +15,8 @@ DATA ATTRIBUTION NOTICE (Open Science Compliance)
 # ==============================================================================
 # DYNAMISCHE PARAMETER (Wissenschaftliche Konfiguration)
 # ==============================================================================
-NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"  #real notification channel
-# NTFY_TOPIC = "HyFiVe_testchannel"           #channel for test purposes
+# NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"  #real notification channel
+NTFY_TOPIC = "HyFiVe_testchannel"           #channel for test purposes
 NTFY_LEVEL_ROUTINE = "low"
 NTFY_LEVEL_REVOKE = "default"
 
@@ -477,13 +477,19 @@ def main():
         # NTFY-Meldungen absenden (jeweils mit angehängtem dev_report_str) and result prints
         print("\n------------------ ERGEBNISSE ------------------")
         total_alerts_sent = 0
-        for level_name in ["Stufe 1 (Fernprognose)", "Stufe 2 (Nahe Prognose)", "Stufe 3 (Akute Warnung)", "Stufe 4 (Messdatenbasiert)"]:
+        max_level = ""
+        collected_warn = ""
+        for level_name in ["Stufe 4 (Messdatenbasiert)", "Stufe 3 (Akute Warnung)", "Stufe 2 (Nahe Prognose)", "Stufe 1 (Fernprognose)"]:
             locations = triggered_by_level[level_name]
             if locations:
+                if max_level = "": max_level = level_name
                 total_alerts_sent += len(locations)
-                alert_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n🎯 Erhöhtes Upwelling-Risiko detektiert!\n\n" + "\n".join(locations) + dev_report_str
-                send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[level_name], title=f"!! {level_name.upper()} !!")
-                print(alert_msg)
+                collected_warn = collected_warn + "\n".join(locations)
+
+        if total_alerts_sent > 0:
+            alert_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n🎯 Erhöhtes Upwelling-Risiko detektiert!\n\n" + collected_warn + dev_report_str
+            send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[max_level], title=f"!! {level_name.upper()} !!")
+            print(alert_msg)
     
         if total_alerts_sent == 0:
             routine_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n✅ Kein erhöhtes Upwellingrisiko detektiert." + dev_report_str
