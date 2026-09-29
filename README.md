@@ -24,4 +24,4 @@ This project relies entirely on open data provided under German open-data laws:
 * `upwelling_predictor.py` - The core Python script containing the detection logic.
 * `upwellingWarning.csv` - contains a result overview
 * `simulate_upwelling.py` - A test script wich generates data wich raise a warning
-* `index.html´ - A Website to visualize the archive data (visit https://sw-of.github.io/detectUpwellingBaltic/)
+* `index.html` - A Website to visualize the archive data (visit https://sw-of.github.io/detectUpwellingBaltic/)
