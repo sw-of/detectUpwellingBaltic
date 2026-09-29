@@ -1,4 +1,4 @@
-import os
+ os
 import json
 import requests
 from datetime import datetime, timezone, timedelta
@@ -482,7 +482,7 @@ def main():
         for level_name in ["Stufe 4 (Messdatenbasiert)", "Stufe 3 (Akute Warnung)", "Stufe 2 (Nahe Prognose)", "Stufe 1 (Fernprognose)"]:
             locations = triggered_by_level[level_name]
             if locations:
-                if max_level = "": max_level = level_name
+                if max_level == "": max_level = level_name
                 total_alerts_sent += len(locations)
                 collected_warn = collected_warn + "\n".join(locations)
 
