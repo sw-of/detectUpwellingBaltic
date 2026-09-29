@@ -488,7 +488,7 @@ def main():
 
         if total_alerts_sent > 0:
             alert_msg = f"ℹ️ Analyse erfolgreich durchlaufen.\nℹ️ Berechnungsbasiszeit: {base_time_str} UTC\n🎯 Erhöhtes Upwelling-Risiko detektiert!\n\n" + collected_warn + dev_report_str
-            send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[max_level], title=f"!! {level_name.upper()} !!")
+            send_ntfy_notification(alert_msg, priority=NTFY_LEVEL_LEVELS[max_level], title=f"!! {max_level.upper()} !!")
             print(alert_msg)
     
         if total_alerts_sent == 0:
