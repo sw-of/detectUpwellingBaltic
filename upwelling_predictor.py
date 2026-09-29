@@ -15,8 +15,8 @@ DATA ATTRIBUTION NOTICE (Open Science Compliance)
 # ==============================================================================
 # DYNAMISCHE PARAMETER (Wissenschaftliche Konfiguration)
 # ==============================================================================
-# NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"  #real notification channel
-NTFY_TOPIC = "HyFiVe_testchannel"           #channel for test purposes
+NTFY_TOPIC = "upwellingWarning_HyFiVeBaltic"  #real notification channel
+# NTFY_TOPIC = "HyFiVe_testchannel"           #channel for test purposes
 NTFY_LEVEL_ROUTINE = "low"
 NTFY_LEVEL_REVOKE = "default"
 
