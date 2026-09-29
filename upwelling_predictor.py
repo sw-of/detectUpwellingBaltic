@@ -481,7 +481,7 @@ def main():
         collected_warn = ""
         for level_name in ["Stufe 4 (Messdatenbasiert)", "Stufe 3 (Akute Warnung)", "Stufe 2 (Nahe Prognose)", "Stufe 1 (Fernprognose)"]:
             locations = triggered_by_level[level_name]
-            if locations:
+            if len(locations) > 0:
                 if total_alerts_sent == 0: max_level = level_name
                 total_alerts_sent += len(locations)
                 collected_warn = collected_warn + "\n".join(locations)
