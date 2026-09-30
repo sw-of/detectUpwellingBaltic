@@ -109,3 +109,4 @@ timestamp_utc,upwelling_predicted,net_wind_hours,details
 2026-09-29 23:14,Ja,52,"Event-Dauer: 52h (45h Wind aktiv (⌀: 5.4m/s, 136°)) von 2026-09-29 12:00 bis 2026-10-01 15:00 UTC"
 2026-09-29 23:14,Ja,53,"Event-Dauer: 53h (47h Wind aktiv (⌀: 5.3m/s, 133°)) von 2026-09-29 11:00 bis 2026-10-01 15:00 UTC"
 2026-09-30 06:01,Ja,54,"Event-Dauer: 54h (48h Wind aktiv (⌀: 5.1m/s, 134°)) von 2026-09-29 10:00 bis 2026-10-01 15:00 UTC"
+2026-09-30 14:15,Ja,55,"Event-Dauer: 55h (49h Wind aktiv (⌀: 5.0m/s, 132°)) von 2026-09-29 08:00 bis 2026-10-01 14:00 UTC"
