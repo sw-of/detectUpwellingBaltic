@@ -62,6 +62,9 @@
   .empty { color: var(--muted); font-size: 0.85rem; font-style: italic; }
   a { color: var(--accent); }
   .footer-note { color: var(--muted); font-size: 0.75rem; margin-top: 4px; }
+  .colorbar-wrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.75rem; color: var(--muted); }
+  .colorbar { flex: 1; max-width: 260px; height: 10px; border-radius: 4px;
+    background: linear-gradient(90deg, #440154, #3b528b, #21918c, #5ec962, #fde725); }
 </style>
 </head>
 <body>
@@ -502,6 +505,62 @@ function extractValid(data) {
 
 const COMPARE_COLORS = ["#38bdf8", "#fb923c", "#34d399", "#f472b6", "#a78bfa", "#facc15", "#f87171", "#4ade80"];
 
+function buildColorbar(maxSpeed) {
+  const wrap = document.createElement("div");
+  wrap.className = "colorbar-wrap";
+  wrap.innerHTML = `<span>0</span><div class="colorbar"></div><span>${maxSpeed.toFixed(0)} m/s</span>
+    <span style="margin-left:8px;">— Punktfarbe = Windgeschwindigkeit</span>`;
+  return wrap;
+}
+
+/* Versteckter Zweit-Datensatz, damit im Tooltip einer Grafik auch die Werte
+   der jeweils anderen Größe (Richtung<->Geschwindigkeit) mit angezeigt werden,
+   ohne den sichtbaren Chart-Inhalt oder die Legende zu beeinflussen. */
+function hiddenCompanionDataset(label, data, axisId) {
+  return {
+    label, data, yAxisID: axisId,
+    pointRadius: 0, borderWidth: 0, showLine: false,
+    hidden: false, order: 99,
+  };
+}
+
+/* Vertikale Markierung(en) für den/die Modelllauf-Zeitpunkt(e).
+   markers: [{ idx, color }, ...] */
+function runVLinePlugin(markers) {
+  return {
+    id: "runLine_" + Math.random().toString(36).slice(2),
+    afterDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea) return;
+      for (const { idx, color } of markers) {
+        if (idx < 0) continue;
+        const x = scales.x.getPixelForValue(idx);
+        if (x < chartArea.left || x > chartArea.right) continue;
+        ctx.save();
+        ctx.strokeStyle = color || "#fb923c"; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
+        ctx.restore();
+      }
+    }
+  };
+}
+
+/* Chart.js-Legendenfilter: interne Tooltip-Hilfsdatensätze ausblenden */
+function legendFilterVisible(item, chartData) {
+  return !chartData.datasets[item.datasetIndex].__hideFromLegend;
+}
+
+/* Segment einer Linie unsichtbar machen, wenn die Richtung über 0°/360°
+   hinweg "springt" (z.B. 350° -> 10°) - sonst entsteht eine irreführende
+   senkrechte Linie quer durchs Diagramm. */
+const noWrapSegment = {
+  borderColor: (ctx) => {
+    const y0 = ctx.p0?.parsed?.y, y1 = ctx.p1?.parsed?.y;
+    if (y0 == null || y1 == null) return undefined;
+    return Math.abs(y1 - y0) > 180 ? "transparent" : undefined;
+  }
+};
+
 function buildBlock(loc, fname, data, runDate) {
   const wrap = document.createElement("div");
   wrap.className = "chart-block";
@@ -549,13 +608,17 @@ function buildBlock(loc, fname, data, runDate) {
         label: "Windgeschwindigkeit [m/s]",
         data: valid.map(r => r.s),
         borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,0.15)",
-        fill: true, pointRadius: 0, borderWidth: 1.6, tension: 0.15,
+        fill: true, pointRadius: 0, borderWidth: 1.6, tension: 0.15, yAxisID: "y",
       }, {
         label: `Mindestgeschw. Standort (${loc.min_speed_ms} m/s)`,
         data: valid.map(() => loc.min_speed_ms),
-        borderColor: "#f87171", borderDash: [5,4], pointRadius: 0, borderWidth: 1.2,
+        borderColor: "#f87171", borderDash: [5,4], pointRadius: 0, borderWidth: 1.2, yAxisID: "y",
+      }, {
+        ...hiddenCompanionDataset("Windrichtung", valid.map(r => r.d), "yHiddenDir"),
+        __hideFromLegend: true, __unit: "°",
       }]
     },
+    plugins: [runVLinePlugin([{ idx: runIdx, color: "#fb923c" }])],
     options: {
       responsive: true,
       interaction: { mode: "index", intersect: false },
@@ -563,24 +626,18 @@ function buildBlock(loc, fname, data, runDate) {
         x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
         y: { min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
              title: { display: true, text: "m/s", color: "#94a3b8" } },
+        yHiddenDir: { display: false, min: 0, max: 360 },
       },
-      plugins: { legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } } },
+      plugins: {
+        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 }, filter: legendFilterVisible } },
+        tooltip: { callbacks: { label: (ctx) => {
+          const unit = ctx.dataset.__unit || "m/s";
+          const val = ctx.parsed.y;
+          return `${ctx.dataset.label}: ${typeof val === "number" ? (unit === "°" ? val.toFixed(0) : val.toFixed(1)) : val} ${unit}`;
+        } } },
+      },
     }
   });
-
-  const runVLine = {
-    id: "runLine",
-    afterDraw(chart) {
-      if (runIdx < 0) return;
-      const x = chart.scales.x.getPixelForValue(runIdx);
-      const { ctx, chartArea } = chart;
-      if (x < chartArea.left || x > chartArea.right) return;
-      ctx.save();
-      ctx.strokeStyle = "#fb923c"; ctx.setLineDash([4,3]); ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
-      ctx.restore();
-    }
-  };
 
   new Chart(canvasDir, {
     type: "line",
@@ -590,21 +647,36 @@ function buildBlock(loc, fname, data, runDate) {
         label: "Windrichtung (woher) [°]",
         data: valid.map(r => r.d),
         pointBackgroundColor: speedColors, pointBorderColor: speedColors,
-        pointRadius: 3, showLine: false,
+        borderColor: "rgba(148,163,184,0.45)", borderWidth: 1.3,
+        pointRadius: 3, showLine: true, tension: 0, segment: noWrapSegment, yAxisID: "y",
+      }, {
+        ...hiddenCompanionDataset("Windgeschwindigkeit", valid.map(r => r.s), "yHiddenSpeed"),
+        __hideFromLegend: true, __unit: "m/s",
       }]
     },
-    plugins: [sectorPlugin(loc.crit_dir_min, loc.crit_dir_max, "rgba(251,146,60,0.14)"), runVLine],
+    plugins: [sectorPlugin(loc.crit_dir_min, loc.crit_dir_max, "rgba(251,146,60,0.14)"),
+              runVLinePlugin([{ idx: runIdx, color: "#fb923c" }])],
     options: {
       responsive: true,
+      interaction: { mode: "index", intersect: false },
       scales: {
         x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
         y: { min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
               callback: v => ({0:"N 0°",90:"O 90°",180:"S 180°",270:"W 270°",360:"N 360°"}[v] ?? v) },
              grid: { color: "#2f3f5c" } },
+        yHiddenSpeed: { display: false, min: 0, max: maxSpeed * 1.1 },
       },
-      plugins: { legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => {
+          const unit = ctx.dataset.__unit || "°";
+          const val = ctx.parsed.y;
+          return `${ctx.dataset.label}: ${typeof val === "number" ? val.toFixed(0) : val} ${unit}`;
+        } } },
+      },
     }
   });
+  wrap.appendChild(buildColorbar(maxSpeed));
 
   const note = document.createElement("div");
   note.className = "footer-note";
@@ -656,27 +728,56 @@ function buildComparisonBlock(loc, entries) {
 
   const speedDatasets = parsed.map((e, i) => {
     const arr = new Array(unionTimes.length).fill(null);
-    e.valid.forEach(r => { arr[timeIndex.get(r.t.getTime())] = r.s; });
+    const dirArr = new Array(unionTimes.length).fill(null);
+    e.valid.forEach(r => { const idx = timeIndex.get(r.t.getTime()); arr[idx] = r.s; dirArr[idx] = r.d; });
     const label = e.runDate
       ? "Lauf " + e.runDate.toLocaleString("de-DE", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
       : e.fname;
     const color = COMPARE_COLORS[i % COMPARE_COLORS.length];
-    return { label, data: arr, borderColor: color, backgroundColor: color, pointRadius: 0, borderWidth: 1.6, spanGaps: false };
-  });
+    return [
+      { label, data: arr, borderColor: color, backgroundColor: color, pointRadius: 0, borderWidth: 1.6, spanGaps: false, yAxisID: "y" },
+      { ...hiddenCompanionDataset(label + " (Richtung)", dirArr, "yHiddenDir"), __hideFromLegend: true, __unit: "°" },
+    ];
+  }).flat();
 
   const dirDatasets = parsed.map((e, i) => {
     const arr = new Array(unionTimes.length).fill(null);
-    e.valid.forEach(r => { arr[timeIndex.get(r.t.getTime())] = r.d; });
+    const speedArr = new Array(unionTimes.length).fill(null);
+    e.valid.forEach(r => { const idx = timeIndex.get(r.t.getTime()); arr[idx] = r.d; speedArr[idx] = r.s; });
     const label = e.runDate
       ? "Lauf " + e.runDate.toLocaleString("de-DE", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
       : e.fname;
     const color = COMPARE_COLORS[i % COMPARE_COLORS.length];
-    return { label, data: arr, pointBackgroundColor: color, pointBorderColor: color, pointRadius: 2.5, showLine: false };
-  });
+    return [
+      { label, data: arr, borderColor: color, backgroundColor: color,
+        pointBackgroundColor: color, pointBorderColor: color, pointRadius: 2.5,
+        borderWidth: 1.4, showLine: true, tension: 0, segment: noWrapSegment, spanGaps: false, yAxisID: "y" },
+      { ...hiddenCompanionDataset(label + " (Geschwindigkeit)", speedArr, "yHiddenSpeed"), __hideFromLegend: true, __unit: "m/s" },
+    ];
+  }).flat();
+
+  // Marker für den jeweiligen Modelllauf-Zeitpunkt je Lauf (nächstgelegener Index)
+  const runMarkers = parsed.map((e, i) => {
+    if (!e.runDate) return null;
+    let idx = timeIndex.get(e.runDate.getTime());
+    if (idx === undefined) {
+      let best = Infinity;
+      unionTimes.forEach((t, j) => { const d = Math.abs(t - e.runDate.getTime()); if (d < best) { best = d; idx = j; } });
+    }
+    return { idx, color: COMPARE_COLORS[i % COMPARE_COLORS.length] };
+  }).filter(Boolean);
+
+  const tooltipLabel = (ctx) => {
+    const unit = ctx.dataset.__unit || (ctx.chart.canvas === canvasSpeed ? "m/s" : "°");
+    const val = ctx.parsed.y;
+    if (val === null || val === undefined) return null;
+    return `${ctx.dataset.label}: ${unit === "°" ? val.toFixed(0) : val.toFixed(1)} ${unit}`;
+  };
 
   new Chart(canvasSpeed, {
     type: "line",
     data: { labels, datasets: speedDatasets },
+    plugins: [runVLinePlugin(runMarkers)],
     options: {
       responsive: true,
       interaction: { mode: "index", intersect: false },
@@ -684,24 +785,33 @@ function buildComparisonBlock(loc, entries) {
         x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
         y: { min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
              title: { display: true, text: "m/s", color: "#94a3b8" } },
+        yHiddenDir: { display: false, min: 0, max: 360 },
       },
-      plugins: { legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } } },
+      plugins: {
+        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 }, filter: legendFilterVisible } },
+        tooltip: { callbacks: { label: tooltipLabel } },
+      },
     }
   });
 
   new Chart(canvasDir, {
     type: "line",
     data: { labels, datasets: dirDatasets },
-    plugins: [sectorPlugin(loc.crit_dir_min, loc.crit_dir_max, "rgba(251,146,60,0.14)")],
+    plugins: [sectorPlugin(loc.crit_dir_min, loc.crit_dir_max, "rgba(251,146,60,0.14)"), runVLinePlugin(runMarkers)],
     options: {
       responsive: true,
+      interaction: { mode: "index", intersect: false },
       scales: {
         x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
         y: { min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
               callback: v => ({0:"N 0°",90:"O 90°",180:"S 180°",270:"W 270°",360:"N 360°"}[v] ?? v) },
              grid: { color: "#2f3f5c" } },
+        yHiddenSpeed: { display: false, min: 0, max: maxSpeed * 1.1 },
       },
-      plugins: { legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } } },
+      plugins: {
+        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 }, filter: legendFilterVisible } },
+        tooltip: { callbacks: { label: tooltipLabel } },
+      },
     }
   });
 
