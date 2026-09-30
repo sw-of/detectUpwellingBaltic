@@ -453,7 +453,7 @@ def main():
                 hours_until_event = (act_time_utc - base_time_utc).total_seconds() / 3600.0
                 
                 if hours_in_past >= REQUIRED_MIN_PAST_HOURS: level, emoji = "Stufe 4 (Messdatenbasiert)", "🚨"
-                elif hours_until_event < 48: level, emoji = "Stufe 3 (Akute Warnung)", "🟠"
+                elif hours_until_event < 48: level, emoji = "Stufe 3 (Akute Warnung)", "🔴"
                 elif hours_until_event < 72: level, emoji = "Stufe 2 (Nahe Prognose)", "🟡"
                 else: level, emoji = "Stufe 1 (Fernprognose)", "⏳"
                     
