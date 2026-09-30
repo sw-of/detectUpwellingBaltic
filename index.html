@@ -509,19 +509,8 @@ function buildColorbar(maxSpeed) {
   const wrap = document.createElement("div");
   wrap.className = "colorbar-wrap";
   wrap.innerHTML = `<span>0</span><div class="colorbar"></div><span>${maxSpeed.toFixed(0)} m/s</span>
-    <span style="margin-left:8px;">— Punktfarbe = Windgeschwindigkeit</span>`;
+    <span style="margin-left:8px;">— Linienfarbe = Windgeschwindigkeit</span>`;
   return wrap;
-}
-
-/* Versteckter Zweit-Datensatz, damit im Tooltip einer Grafik auch die Werte
-   der jeweils anderen Größe (Richtung<->Geschwindigkeit) mit angezeigt werden,
-   ohne den sichtbaren Chart-Inhalt oder die Legende zu beeinflussen. */
-function hiddenCompanionDataset(label, data, axisId) {
-  return {
-    label, data, yAxisID: axisId,
-    pointRadius: 0, borderWidth: 0, showLine: false,
-    hidden: false, order: 99,
-  };
 }
 
 /* Vertikale Markierung(en) für den/die Modelllauf-Zeitpunkt(e).
@@ -545,15 +534,45 @@ function runVLinePlugin(markers) {
   };
 }
 
-/* Chart.js-Legendenfilter: interne Tooltip-Hilfsdatensätze ausblenden */
-function legendFilterVisible(item, chartData) {
-  return !chartData.datasets[item.datasetIndex].__hideFromLegend;
+/* Tooltip-Zeile mit der jeweils anderen Größe in Klammern dahinter, z.B.
+   "Lauf 18.09., 15:00: 5.5 m/s (210°)". Erwartet, dass das Dataset ein
+   Array __companion (gleiche Indizierung wie data) sowie __unit trägt. */
+function pairedTooltipLabel(ctx) {
+  const val = ctx.parsed.y;
+  if (val === null || val === undefined) return null;
+  const unit = ctx.dataset.__unit || "";
+  const mainStr = unit === "°" ? val.toFixed(0) : val.toFixed(1);
+  let out = `${ctx.dataset.label}: ${mainStr} ${unit}`;
+  const companion = ctx.dataset.__companion ? ctx.dataset.__companion[ctx.dataIndex] : undefined;
+  if (companion !== undefined && companion !== null) {
+    const compUnit = ctx.dataset.__companionUnit || "";
+    const compStr = compUnit === "°" ? companion.toFixed(0) : companion.toFixed(1);
+    out += ` (${compStr} ${compUnit})`;
+  }
+  return out;
 }
 
-/* Segment einer Linie unsichtbar machen, wenn die Richtung über 0°/360°
-   hinweg "springt" (z.B. 350° -> 10°) - sonst entsteht eine irreführende
-   senkrechte Linie quer durchs Diagramm. */
-const noWrapSegment = {
+/* Liniensegment nach Windgeschwindigkeit einfärben (liest die Geschwindigkeit
+   aus dataset.__companion des Richtungs-Datasets). Segmente, die über 0°/360°
+   hinweg "springen", werden ausgeblendet statt eine senkrechte Linie zu ziehen. */
+function speedColoredSegment(maxSpeed) {
+  return {
+    borderColor: (ctx) => {
+      const y0 = ctx.p0?.parsed?.y, y1 = ctx.p1?.parsed?.y;
+      if (y0 == null || y1 == null) return undefined;
+      if (Math.abs(y1 - y0) > 180) return "transparent";
+      const companion = ctx.chart.data.datasets[ctx.datasetIndex].__companion;
+      const s0 = companion ? companion[ctx.p0DataIndex] : null;
+      const s1 = companion ? companion[ctx.p1DataIndex] : null;
+      if (s0 == null || s1 == null) return "rgba(148,163,184,0.5)";
+      return viridis(((s0 + s1) / 2) / maxSpeed);
+    }
+  };
+}
+
+/* Nur das 0°/360°-Sprungsegment ausblenden, sonst die per Dataset gesetzte
+   (feste) Farbe beibehalten - für die Vergleichsgrafik (eine Farbe je Lauf). */
+const wrapHideSegment = {
   borderColor: (ctx) => {
     const y0 = ctx.p0?.parsed?.y, y1 = ctx.p1?.parsed?.y;
     if (y0 == null || y1 == null) return undefined;
@@ -609,13 +628,12 @@ function buildBlock(loc, fname, data, runDate) {
         data: valid.map(r => r.s),
         borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,0.15)",
         fill: true, pointRadius: 0, borderWidth: 1.6, tension: 0.15, yAxisID: "y",
+        __unit: "m/s", __companion: valid.map(r => r.d), __companionUnit: "°",
       }, {
         label: `Mindestgeschw. Standort (${loc.min_speed_ms} m/s)`,
         data: valid.map(() => loc.min_speed_ms),
         borderColor: "#f87171", borderDash: [5,4], pointRadius: 0, borderWidth: 1.2, yAxisID: "y",
-      }, {
-        ...hiddenCompanionDataset("Windrichtung", valid.map(r => r.d), "yHiddenDir"),
-        __hideFromLegend: true, __unit: "°",
+        __unit: "m/s",
       }]
     },
     plugins: [runVLinePlugin([{ idx: runIdx, color: "#fb923c" }])],
@@ -626,15 +644,10 @@ function buildBlock(loc, fname, data, runDate) {
         x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
         y: { min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
              title: { display: true, text: "m/s", color: "#94a3b8" } },
-        yHiddenDir: { display: false, min: 0, max: 360 },
       },
       plugins: {
-        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 }, filter: legendFilterVisible } },
-        tooltip: { callbacks: { label: (ctx) => {
-          const unit = ctx.dataset.__unit || "m/s";
-          const val = ctx.parsed.y;
-          return `${ctx.dataset.label}: ${typeof val === "number" ? (unit === "°" ? val.toFixed(0) : val.toFixed(1)) : val} ${unit}`;
-        } } },
+        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } },
+        tooltip: { callbacks: { label: pairedTooltipLabel } },
       },
     }
   });
@@ -647,11 +660,9 @@ function buildBlock(loc, fname, data, runDate) {
         label: "Windrichtung (woher) [°]",
         data: valid.map(r => r.d),
         pointBackgroundColor: speedColors, pointBorderColor: speedColors,
-        borderColor: "rgba(148,163,184,0.45)", borderWidth: 1.3,
-        pointRadius: 3, showLine: true, tension: 0, segment: noWrapSegment, yAxisID: "y",
-      }, {
-        ...hiddenCompanionDataset("Windgeschwindigkeit", valid.map(r => r.s), "yHiddenSpeed"),
-        __hideFromLegend: true, __unit: "m/s",
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2,
+        showLine: true, tension: 0, segment: speedColoredSegment(maxSpeed), yAxisID: "y",
+        __unit: "°", __companion: valid.map(r => r.s), __companionUnit: "m/s",
       }]
     },
     plugins: [sectorPlugin(loc.crit_dir_min, loc.crit_dir_max, "rgba(251,146,60,0.14)"),
@@ -664,15 +675,10 @@ function buildBlock(loc, fname, data, runDate) {
         y: { min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
               callback: v => ({0:"N 0°",90:"O 90°",180:"S 180°",270:"W 270°",360:"N 360°"}[v] ?? v) },
              grid: { color: "#2f3f5c" } },
-        yHiddenSpeed: { display: false, min: 0, max: maxSpeed * 1.1 },
       },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => {
-          const unit = ctx.dataset.__unit || "°";
-          const val = ctx.parsed.y;
-          return `${ctx.dataset.label}: ${typeof val === "number" ? val.toFixed(0) : val} ${unit}`;
-        } } },
+        tooltip: { callbacks: { label: pairedTooltipLabel } },
       },
     }
   });
@@ -734,11 +740,9 @@ function buildComparisonBlock(loc, entries) {
       ? "Lauf " + e.runDate.toLocaleString("de-DE", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
       : e.fname;
     const color = COMPARE_COLORS[i % COMPARE_COLORS.length];
-    return [
-      { label, data: arr, borderColor: color, backgroundColor: color, pointRadius: 0, borderWidth: 1.6, spanGaps: false, yAxisID: "y" },
-      { ...hiddenCompanionDataset(label + " (Richtung)", dirArr, "yHiddenDir"), __hideFromLegend: true, __unit: "°" },
-    ];
-  }).flat();
+    return { label, data: arr, borderColor: color, backgroundColor: color, pointRadius: 0, borderWidth: 1.6,
+             spanGaps: false, yAxisID: "y", __unit: "m/s", __companion: dirArr, __companionUnit: "°" };
+  });
 
   const dirDatasets = parsed.map((e, i) => {
     const arr = new Array(unionTimes.length).fill(null);
@@ -748,13 +752,11 @@ function buildComparisonBlock(loc, entries) {
       ? "Lauf " + e.runDate.toLocaleString("de-DE", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
       : e.fname;
     const color = COMPARE_COLORS[i % COMPARE_COLORS.length];
-    return [
-      { label, data: arr, borderColor: color, backgroundColor: color,
-        pointBackgroundColor: color, pointBorderColor: color, pointRadius: 2.5,
-        borderWidth: 1.4, showLine: true, tension: 0, segment: noWrapSegment, spanGaps: false, yAxisID: "y" },
-      { ...hiddenCompanionDataset(label + " (Geschwindigkeit)", speedArr, "yHiddenSpeed"), __hideFromLegend: true, __unit: "m/s" },
-    ];
-  }).flat();
+    return { label, data: arr, borderColor: color, backgroundColor: color,
+      pointBackgroundColor: color, pointBorderColor: color, pointRadius: 2.5,
+      borderWidth: 1.4, showLine: true, tension: 0, segment: wrapHideSegment, spanGaps: false, yAxisID: "y",
+      __unit: "°", __companion: speedArr, __companionUnit: "m/s" };
+  });
 
   // Marker für den jeweiligen Modelllauf-Zeitpunkt je Lauf (nächstgelegener Index)
   const runMarkers = parsed.map((e, i) => {
@@ -767,13 +769,6 @@ function buildComparisonBlock(loc, entries) {
     return { idx, color: COMPARE_COLORS[i % COMPARE_COLORS.length] };
   }).filter(Boolean);
 
-  const tooltipLabel = (ctx) => {
-    const unit = ctx.dataset.__unit || (ctx.chart.canvas === canvasSpeed ? "m/s" : "°");
-    const val = ctx.parsed.y;
-    if (val === null || val === undefined) return null;
-    return `${ctx.dataset.label}: ${unit === "°" ? val.toFixed(0) : val.toFixed(1)} ${unit}`;
-  };
-
   new Chart(canvasSpeed, {
     type: "line",
     data: { labels, datasets: speedDatasets },
@@ -785,11 +780,10 @@ function buildComparisonBlock(loc, entries) {
         x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
         y: { min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
              title: { display: true, text: "m/s", color: "#94a3b8" } },
-        yHiddenDir: { display: false, min: 0, max: 360 },
       },
       plugins: {
-        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 }, filter: legendFilterVisible } },
-        tooltip: { callbacks: { label: tooltipLabel } },
+        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } },
+        tooltip: { callbacks: { label: pairedTooltipLabel } },
       },
     }
   });
@@ -806,11 +800,10 @@ function buildComparisonBlock(loc, entries) {
         y: { min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
               callback: v => ({0:"N 0°",90:"O 90°",180:"S 180°",270:"W 270°",360:"N 360°"}[v] ?? v) },
              grid: { color: "#2f3f5c" } },
-        yHiddenSpeed: { display: false, min: 0, max: maxSpeed * 1.1 },
       },
       plugins: {
-        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 }, filter: legendFilterVisible } },
-        tooltip: { callbacks: { label: tooltipLabel } },
+        legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } },
+        tooltip: { callbacks: { label: pairedTooltipLabel } },
       },
     }
   });
