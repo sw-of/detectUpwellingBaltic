@@ -63,8 +63,16 @@
   a { color: var(--accent); }
   .footer-note { color: var(--muted); font-size: 0.75rem; margin-top: 4px; }
   .colorbar-wrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.75rem; color: var(--muted); }
-  .colorbar { flex: 1; max-width: 260px; height: 10px; border-radius: 4px;
+  .colorbar { flex: 1; max-width: 260px; height: 10px; border-radius: 4px; position: relative;
     background: linear-gradient(90deg, #440154, #3b528b, #21918c, #5ec962, #fde725); }
+  .colorbar-tick { position: absolute; top: -3px; width: 2px; height: 16px; background: #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5); transform: translateX(-1px); }
+  .colorbar-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+    vertical-align: middle; border: 1px solid rgba(255,255,255,0.4); margin-right: 3px; }
+  .zoom-toggle { display: flex; gap: 4px; margin-left: auto; }
+  .zoom-btn { background: var(--panel2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; font-weight: 500; cursor: pointer; }
+  .zoom-btn.active { background: var(--accent); color: #06202e; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -130,6 +138,14 @@
 
   <div class="card" id="resultsCard" style="display:none;">
     <h2>Ergebnisse</h2>
+    <div class="row" style="margin-bottom:12px;">
+      <span class="footer-note">Zoom: Rechteck in einer Grafik aufziehen · Doppelklick = zurücksetzen</span>
+      <div class="zoom-toggle" id="zoomToggle">
+        <button class="zoom-btn active" data-mode="x">Nur X (Zeit)</button>
+        <button class="zoom-btn" data-mode="y">Nur Y</button>
+        <button class="zoom-btn" data-mode="xy">X + Y</button>
+      </div>
+    </div>
     <div id="results"></div>
   </div>
 
@@ -156,23 +172,57 @@ let chartReady = null;
 function ensureChartLoaded() {
   if (chartReady) return chartReady;
   chartReady = (async () => {
-    if (typeof window.Chart !== "undefined") return true;
-    log("Chart.js von der primären Quelle nicht verfügbar, lade Alternative (cdnjs) nach ...");
-    try {
-      await loadScriptTag("https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js");
-    } catch (e) {
-      log("FEHLER: " + e.message);
-    }
     if (typeof window.Chart === "undefined") {
-      throw new Error(
-        "Chart.js konnte von keiner der beiden Quellen geladen werden. " +
-        "Prüfe die Internetverbindung bzw. ob ein Werbe-/Skriptblocker cdn.jsdelivr.net " +
-        "oder cdnjs.cloudflare.com blockiert."
-      );
+      log("Chart.js von der primären Quelle nicht verfügbar, lade Alternative (cdnjs) nach ...");
+      try {
+        await loadScriptTag("https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js");
+      } catch (e) {
+        log("FEHLER: " + e.message);
+      }
+      if (typeof window.Chart === "undefined") {
+        throw new Error(
+          "Chart.js konnte von keiner der beiden Quellen geladen werden. " +
+          "Prüfe die Internetverbindung bzw. ob ein Werbe-/Skriptblocker cdn.jsdelivr.net " +
+          "oder cdnjs.cloudflare.com blockiert."
+        );
+      }
+    }
+    // Zoom-Plugin erst jetzt laden, damit es garantiert ein bereits vorhandenes
+    // window.Chart vorfindet (unabhängig davon, welche der beiden Quellen oben griff).
+    // ensureChartLoaded() läuft dank Memoisierung ohnehin nur einmal, daher ohne
+    // zusätzliche "schon geladen?"-Prüfung.
+    try {
+      await loadScriptTag("https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js");
+    } catch (e) {
+      log("Zoom-Plugin von jsDelivr nicht verfügbar, versuche cdnjs ...");
+      try {
+        await loadScriptTag("https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.2.0/chartjs-plugin-zoom.min.js");
+      } catch (e2) {
+        log("Zoom-Plugin konnte nicht geladen werden, Diagramme funktionieren ohne Zoom. (" + e2.message + ")");
+      }
     }
     return true;
   })();
   return chartReady;
+}
+
+/* Aktueller globaler Zoom-Modus ('x', 'y' oder 'xy'), per Umschalter änderbar.
+   Als Funktion an die Chart-Konfiguration übergeben, damit jede Zoom-Aktion
+   den jeweils aktuellen Wert verwendet, ohne bestehende Charts neu zu bauen. */
+const zoomState = { mode: "x" };
+function zoomPluginOptions() {
+  return {
+    pan: { enabled: false },
+    zoom: {
+      wheel: { enabled: false },
+      pinch: { enabled: false },
+      drag: { enabled: true, backgroundColor: "rgba(56,189,248,0.15)", borderColor: "rgba(56,189,248,0.6)", borderWidth: 1 },
+      mode: () => zoomState.mode,
+    },
+  };
+}
+function wireResetOnDoubleClick(canvas, chart) {
+  canvas.addEventListener("dblclick", () => chart.resetZoom());
 }
 
 /* ---------------------------------------------------------------------
@@ -443,6 +493,13 @@ $("btnSelLatest").addEventListener("click", () => {
   updateSelCount();
 });
 
+$("zoomToggle").addEventListener("click", (e) => {
+  const btn = e.target.closest(".zoom-btn");
+  if (!btn) return;
+  zoomState.mode = btn.dataset.mode;
+  document.querySelectorAll("#zoomToggle .zoom-btn").forEach(b => b.classList.toggle("active", b === btn));
+});
+
 /* ---------------------------------------------------------------------
  * Farbverlauf (vereinfachtes Viridis) für Geschwindigkeits-Einfärbung
  * ------------------------------------------------------------------- */
@@ -505,11 +562,27 @@ function extractValid(data) {
 
 const COMPARE_COLORS = ["#38bdf8", "#fb923c", "#34d399", "#f472b6", "#a78bfa", "#facc15", "#f87171", "#4ade80"];
 
-function buildColorbar(maxSpeed) {
+function buildColorbar(maxSpeed, thresholdMs) {
   const wrap = document.createElement("div");
   wrap.className = "colorbar-wrap";
   wrap.innerHTML = `<span>0</span><div class="colorbar"></div><span>${maxSpeed.toFixed(0)} m/s</span>
     <span style="margin-left:8px;">— Linienfarbe = Windgeschwindigkeit</span>`;
+
+  if (thresholdMs !== undefined && thresholdMs !== null && thresholdMs <= maxSpeed) {
+    const bar = wrap.querySelector(".colorbar");
+    const pct = Math.max(0, Math.min(100, (thresholdMs / maxSpeed) * 100));
+    const tick = document.createElement("div");
+    tick.className = "colorbar-tick";
+    tick.style.left = pct + "%";
+    tick.title = `Grenzwert: ${thresholdMs} m/s`;
+    bar.appendChild(tick);
+
+    const example = document.createElement("span");
+    example.style.marginLeft = "8px";
+    example.innerHTML = `<span class="colorbar-swatch" style="background:${viridis(thresholdMs / maxSpeed)}"></span>ab ${thresholdMs} m/s`;
+    wrap.appendChild(example);
+  }
+
   return wrap;
 }
 
@@ -538,6 +611,7 @@ function runVLinePlugin(markers) {
    "Lauf 18.09., 15:00: 5.5 m/s (210°)". Erwartet, dass das Dataset ein
    Array __companion (gleiche Indizierung wie data) sowie __unit trägt. */
 function pairedTooltipLabel(ctx) {
+  if (ctx.dataset.__skipTooltip) return null;
   const val = ctx.parsed.y;
   if (val === null || val === undefined) return null;
   const unit = ctx.dataset.__unit || "";
@@ -619,7 +693,7 @@ function buildBlock(loc, fname, data, runDate) {
     });
   }
 
-  new Chart(canvasSpeed, {
+  const chartSpeed = new Chart(canvasSpeed, {
     type: "line",
     data: {
       labels,
@@ -633,7 +707,7 @@ function buildBlock(loc, fname, data, runDate) {
         label: `Mindestgeschw. Standort (${loc.min_speed_ms} m/s)`,
         data: valid.map(() => loc.min_speed_ms),
         borderColor: "#f87171", borderDash: [5,4], pointRadius: 0, borderWidth: 1.2, yAxisID: "y",
-        __unit: "m/s",
+        __unit: "m/s", __skipTooltip: true,
       }]
     },
     plugins: [runVLinePlugin([{ idx: runIdx, color: "#fb923c" }])],
@@ -648,11 +722,13 @@ function buildBlock(loc, fname, data, runDate) {
       plugins: {
         legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } },
         tooltip: { callbacks: { label: pairedTooltipLabel } },
+        zoom: zoomPluginOptions(),
       },
     }
   });
+  wireResetOnDoubleClick(canvasSpeed, chartSpeed);
 
-  new Chart(canvasDir, {
+  const chartDir = new Chart(canvasDir, {
     type: "line",
     data: {
       labels,
@@ -679,10 +755,12 @@ function buildBlock(loc, fname, data, runDate) {
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: pairedTooltipLabel } },
+        zoom: zoomPluginOptions(),
       },
     }
   });
-  wrap.appendChild(buildColorbar(maxSpeed));
+  wireResetOnDoubleClick(canvasDir, chartDir);
+  wrap.appendChild(buildColorbar(maxSpeed, loc.min_speed_ms));
 
   const note = document.createElement("div");
   note.className = "footer-note";
@@ -743,6 +821,12 @@ function buildComparisonBlock(loc, entries) {
     return { label, data: arr, borderColor: color, backgroundColor: color, pointRadius: 0, borderWidth: 1.6,
              spanGaps: false, yAxisID: "y", __unit: "m/s", __companion: dirArr, __companionUnit: "°" };
   });
+  speedDatasets.push({
+    label: `Mindestgeschw. Standort (${loc.min_speed_ms} m/s)`,
+    data: unionTimes.map(() => loc.min_speed_ms),
+    borderColor: "#f87171", borderDash: [5,4], pointRadius: 0, borderWidth: 1.2, yAxisID: "y",
+    __unit: "m/s", __skipTooltip: true,
+  });
 
   const dirDatasets = parsed.map((e, i) => {
     const arr = new Array(unionTimes.length).fill(null);
@@ -753,7 +837,7 @@ function buildComparisonBlock(loc, entries) {
       : e.fname;
     const color = COMPARE_COLORS[i % COMPARE_COLORS.length];
     return { label, data: arr, borderColor: color, backgroundColor: color,
-      pointBackgroundColor: color, pointBorderColor: color, pointRadius: 2.5,
+      pointBackgroundColor: color, pointBorderColor: color, pointRadius: 0, pointHoverRadius: 4,
       borderWidth: 1.4, showLine: true, tension: 0, segment: wrapHideSegment, spanGaps: false, yAxisID: "y",
       __unit: "°", __companion: speedArr, __companionUnit: "m/s" };
   });
@@ -769,7 +853,7 @@ function buildComparisonBlock(loc, entries) {
     return { idx, color: COMPARE_COLORS[i % COMPARE_COLORS.length] };
   }).filter(Boolean);
 
-  new Chart(canvasSpeed, {
+  const chartSpeedCmp = new Chart(canvasSpeed, {
     type: "line",
     data: { labels, datasets: speedDatasets },
     plugins: [runVLinePlugin(runMarkers)],
@@ -784,11 +868,13 @@ function buildComparisonBlock(loc, entries) {
       plugins: {
         legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } },
         tooltip: { callbacks: { label: pairedTooltipLabel } },
+        zoom: zoomPluginOptions(),
       },
     }
   });
+  wireResetOnDoubleClick(canvasSpeed, chartSpeedCmp);
 
-  new Chart(canvasDir, {
+  const chartDirCmp = new Chart(canvasDir, {
     type: "line",
     data: { labels, datasets: dirDatasets },
     plugins: [sectorPlugin(loc.crit_dir_min, loc.crit_dir_max, "rgba(251,146,60,0.14)"), runVLinePlugin(runMarkers)],
@@ -804,9 +890,11 @@ function buildComparisonBlock(loc, entries) {
       plugins: {
         legend: { labels: { color: "#e2e8f0", boxWidth: 14, font: { size: 11 } } },
         tooltip: { callbacks: { label: pairedTooltipLabel } },
+        zoom: zoomPluginOptions(),
       },
     }
   });
+  wireResetOnDoubleClick(canvasDir, chartDirCmp);
 
   const note = document.createElement("div");
   note.className = "footer-note";
