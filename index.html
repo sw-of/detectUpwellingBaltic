@@ -141,10 +141,14 @@
     <div class="row" style="margin-bottom:12px;">
       <span class="footer-note">Zoom: Rechteck in einer Grafik aufziehen · Doppelklick = zurücksetzen</span>
       <div class="zoom-toggle" id="zoomToggle">
-        <button class="zoom-btn active" data-mode="x">Nur X (Zeit)</button>
+        <button class="zoom-btn active" data-mode="xy">X + Y</button>
+        <button class="zoom-btn" data-mode="x">Nur X (Zeit)</button>
         <button class="zoom-btn" data-mode="y">Nur Y</button>
-        <button class="zoom-btn" data-mode="xy">X + Y</button>
       </div>
+      <label style="display:flex; align-items:center; gap:5px; font-size:0.82rem; color:var(--muted); cursor:pointer;">
+        <input type="checkbox" id="syncZoomToggle">
+        Alle Grafiken gemeinsam zoomen
+      </label>
     </div>
     <div id="results"></div>
   </div>
@@ -209,20 +213,165 @@ function ensureChartLoaded() {
 /* Aktueller globaler Zoom-Modus ('x', 'y' oder 'xy'), per Umschalter änderbar.
    Als Funktion an die Chart-Konfiguration übergeben, damit jede Zoom-Aktion
    den jeweils aktuellen Wert verwendet, ohne bestehende Charts neu zu bauen. */
-const zoomState = { mode: "x" };
+const zoomState = { mode: "xy" };
+/* Gemeinsames Zoomen über alle Grafiken hinweg (per Schalter aktivierbar). */
+const syncState = { enabled: false, busy: false };
+/* Alle erzeugten Chart-Instanzen, damit synchronisiertes Zoomen/Zurücksetzen
+   über alle Diagramme hinweg funktioniert. Jede Instanz trägt zusätzlich
+   __times (echte Zeitstempel je Datenpunkt, ms seit Epoch) und __axisKind
+   ("speed" oder "direction"), damit beim Synchronisieren nur zwischen
+   Diagrammen mit vergleichbarer Y-Achse auch die Y-Achse mitgezoomt wird.
+   Unterschiedliche Y-Achsen bekommen trotzdem die X-Achse (Zeit) synchron. */
+const allCharts = [];
+
+/* Bruchteiliger Kategorie-Achsen-Index -> echter Zeitstempel (lineare
+   Interpolation zwischen den beiden benachbarten Datenpunkten). */
+function indexToTime(times, idx) {
+  if (idx === null || idx === undefined || !times.length) return null;
+  const clamped = Math.max(0, Math.min(times.length - 1, idx));
+  const i0 = Math.floor(clamped), i1 = Math.ceil(clamped);
+  const t0 = times[i0], t1 = times[i1];
+  const f = clamped - i0;
+  return t0 + (t1 - t0) * f;
+}
+
+/* Echter Zeitstempel -> bruchteiliger Kategorie-Achsen-Index im Ziel-Array
+   (per binärer Suche), damit sich unterschiedlich lange/versetzte Zeitreihen
+   (z.B. verschiedene Läufe oder Orte) trotzdem auf denselben Zeitausschnitt
+   abbilden lassen. */
+function timeToIndex(times, t) {
+  if (t === null || t === undefined || !times.length) return null;
+  if (t <= times[0]) return 0;
+  if (t >= times[times.length - 1]) return times.length - 1;
+  let lo = 0, hi = times.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] <= t) lo = mid; else hi = mid;
+  }
+  const t0 = times[lo], t1 = times[hi];
+  const frac = t1 === t0 ? 0 : (t - t0) / (t1 - t0);
+  return lo + frac;
+}
+
+/* Feste Breite der Y-Achsen-Beschriftung: Dadurch beginnt die Plotfläche in
+   allen Diagrammen exakt an derselben x-Position - unabhängig davon, wie breit
+   die Tick-Beschriftungen gerade sind (z.B. "4.5" vs. "10.5" vs. "N 360°"),
+   auch nach dem Zoomen. */
+const Y_AXIS_WIDTH = 64;
+const CHART_HEIGHT_PX = 240;
+function fixedYWidth(scale) { scale.width = Y_AXIS_WIDTH; }
+
+/* Gemeinsame X-Achse (Zeit). align:"inner" hält die erste/letzte Beschriftung
+   innerhalb der Plotfläche, damit überstehende Labels den Rand nicht
+   verschieben; minRotation/maxRotation 0 verhindert gekippte Beschriftungen. */
+function xScaleOptions() {
+  return {
+    type: "category",
+    ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, minRotation: 0, maxRotation: 0, align: "inner" },
+    grid: { color: "#2f3f5c" },
+  };
+}
+
+/* Canvas in einem Container fester Höhe anlegen (zusammen mit
+   maintainAspectRatio:false), damit alle Diagramme gleich hoch bleiben. */
+function makeChartCanvas(parent, heightPx) {
+  const box = document.createElement("div");
+  box.style.position = "relative";
+  box.style.width = "100%";
+  box.style.height = heightPx + "px";
+  const canvas = document.createElement("canvas");
+  box.appendChild(canvas);
+  parent.appendChild(box);
+  return canvas;
+}
+
+/* Setzt ein Diagramm vollständig auf die Ausgangsansicht zurück: erst über das
+   Plugin, danach zur Sicherheit auch die Achsengrenzen explizit auf die beim
+   Erzeugen konfigurierten Werte (X: automatisch, Y: feste Voll-Skala). */
+function resetChartFully(chart) {
+  chart.resetZoom("none");
+  const sc = chart.options.scales;
+  sc.x.min = undefined;
+  sc.x.max = undefined;
+  if (chart.__yFull) {
+    sc.y.min = chart.__yFull.min;
+    sc.y.max = chart.__yFull.max;
+  }
+  chart.update("none");
+}
+
+function resetAllZoom(charts) {
+  syncState.busy = true;   // verhindert, dass der Reset erneut einen Sync auslöst
+  try { charts.forEach(resetChartFully); }
+  finally { syncState.busy = false; }
+}
+
+/* Überträgt den Zoom eines Diagramms auf alle anderen registrierten Diagramme
+   (nur wenn der Sync-Schalter aktiv ist). Nutzt dafür die offizielle
+   Plugin-Funktion zoomScale(), damit das Plugin den Zustand korrekt kennt und
+   beim Zurücksetzen die richtigen Ausgangswerte wiederherstellt.
+   - X (Zeit) wird immer über echte Zeitstempel abgebildet.
+   - Y wird nur zwischen Diagrammen mit gleicher Y-Achse (Geschwindigkeit bzw.
+     Richtung) übertragen, und nur wenn tatsächlich in Y gezoomt wurde. */
+function propagateZoom(sourceChart) {
+  if (!syncState.enabled || syncState.busy) return;
+  const xScale = sourceChart.scales.x, yScale = sourceChart.scales.y;
+  if (!xScale || !sourceChart.__times) return;
+
+  const mode = zoomState.mode;
+  const doX = mode === "x" || mode === "xy";
+  const doY = mode === "y" || mode === "xy";
+  const tMin = doX ? indexToTime(sourceChart.__times, xScale.min) : null;
+  const tMax = doX ? indexToTime(sourceChart.__times, xScale.max) : null;
+
+  syncState.busy = true;
+  try {
+    for (const chart of allCharts) {
+      if (chart === sourceChart || !chart.__times) continue;
+      if (doX) {
+        const iMin = timeToIndex(chart.__times, tMin);
+        const iMax = timeToIndex(chart.__times, tMax);
+        // Liegt das Zeitfenster komplett außerhalb der Daten dieses Diagramms,
+        // würde ein Bereich der Breite 0 entstehen -> dann unverändert lassen.
+        if (iMin !== null && iMax !== null && iMax - iMin >= 0.5) {
+          chart.zoomScale("x", { min: iMin, max: iMax }, "none");
+        }
+      }
+      if (doY && yScale && chart.__axisKind === sourceChart.__axisKind) {
+        chart.zoomScale("y", { min: yScale.min, max: yScale.max }, "none");
+      }
+    }
+  } finally {
+    syncState.busy = false;
+  }
+}
+
 function zoomPluginOptions() {
   return {
     pan: { enabled: false },
     zoom: {
       wheel: { enabled: false },
       pinch: { enabled: false },
-      drag: { enabled: true, backgroundColor: "rgba(56,189,248,0.15)", borderColor: "rgba(56,189,248,0.6)", borderWidth: 1 },
+      // threshold: winzige Mausbewegungen (z.B. beim Doppelklick) lösen keinen Zoom aus
+      drag: { enabled: true, threshold: 8, backgroundColor: "rgba(56,189,248,0.15)", borderColor: "rgba(56,189,248,0.6)", borderWidth: 1 },
       mode: () => zoomState.mode,
+      onZoomComplete: (ctx) => propagateZoom(ctx.chart),
     },
   };
 }
+
+/* Registriert eine Chart-Instanz für die Synchronisierung. */
+function registerChart(chart, times, axisKind) {
+  chart.__times = times;
+  chart.__axisKind = axisKind;
+  chart.__yFull = { min: chart.options.scales.y.min, max: chart.options.scales.y.max };
+  allCharts.push(chart);
+}
+
 function wireResetOnDoubleClick(canvas, chart) {
-  canvas.addEventListener("dblclick", () => chart.resetZoom());
+  canvas.addEventListener("dblclick", () => {
+    resetAllZoom(syncState.enabled ? allCharts : [chart]);
+  });
 }
 
 /* ---------------------------------------------------------------------
@@ -500,6 +649,10 @@ $("zoomToggle").addEventListener("click", (e) => {
   document.querySelectorAll("#zoomToggle .zoom-btn").forEach(b => b.classList.toggle("active", b === btn));
 });
 
+$("syncZoomToggle").addEventListener("change", (e) => {
+  syncState.enabled = e.target.checked;
+});
+
 /* ---------------------------------------------------------------------
  * Farbverlauf (vereinfachtes Viridis) für Geschwindigkeits-Einfärbung
  * ------------------------------------------------------------------- */
@@ -671,12 +824,8 @@ function buildBlock(loc, fname, data, runDate) {
   title.innerHTML = `${loc.name} <span class="muted">– ${fname}${runDate ? " · Lauf " + runDate.toLocaleString("de-DE",{timeZone:"UTC",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) + " UTC" : ""} · ${range}</span>`;
   wrap.appendChild(title);
 
-  const canvasSpeed = document.createElement("canvas");
-  canvasSpeed.height = 90;
-  wrap.appendChild(canvasSpeed);
-  const canvasDir = document.createElement("canvas");
-  canvasDir.height = 140;
-  wrap.appendChild(canvasDir);
+  const canvasSpeed = makeChartCanvas(wrap, CHART_HEIGHT_PX);
+  const canvasDir = makeChartCanvas(wrap, CHART_HEIGHT_PX);
 
   const maxSpeed = Math.max(8, ...valid.map(r => r.s));
   const speedColors = valid.map(r => viridis(r.s / maxSpeed));
@@ -713,10 +862,13 @@ function buildBlock(loc, fname, data, runDate) {
     plugins: [runVLinePlugin([{ idx: runIdx, color: "#fb923c" }])],
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: { padding: { top: 4, right: 14, bottom: 0, left: 0 } },
       interaction: { mode: "index", intersect: false },
       scales: {
-        x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
-        y: { min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
+        x: xScaleOptions(),
+        y: { afterFit: fixedYWidth, min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
              title: { display: true, text: "m/s", color: "#94a3b8" } },
       },
       plugins: {
@@ -727,6 +879,7 @@ function buildBlock(loc, fname, data, runDate) {
     }
   });
   wireResetOnDoubleClick(canvasSpeed, chartSpeed);
+  registerChart(chartSpeed, valid.map(r => r.t.getTime()), "speed");
 
   const chartDir = new Chart(canvasDir, {
     type: "line",
@@ -745,10 +898,13 @@ function buildBlock(loc, fname, data, runDate) {
               runVLinePlugin([{ idx: runIdx, color: "#fb923c" }])],
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: { padding: { top: 4, right: 14, bottom: 0, left: 0 } },
       interaction: { mode: "index", intersect: false },
       scales: {
-        x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
-        y: { min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
+        x: xScaleOptions(),
+        y: { afterFit: fixedYWidth, min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
               callback: v => ({0:"N 0°",90:"O 90°",180:"S 180°",270:"W 270°",360:"N 360°"}[v] ?? v) },
              grid: { color: "#2f3f5c" } },
       },
@@ -760,6 +916,7 @@ function buildBlock(loc, fname, data, runDate) {
     }
   });
   wireResetOnDoubleClick(canvasDir, chartDir);
+  registerChart(chartDir, valid.map(r => r.t.getTime()), "direction");
   wrap.appendChild(buildColorbar(maxSpeed, loc.min_speed_ms));
 
   const note = document.createElement("div");
@@ -792,12 +949,8 @@ function buildComparisonBlock(loc, entries) {
   title.innerHTML = `Vergleich der Modelläufe – ${loc.name} <span class="muted">(${parsed.length} Läufe)</span>`;
   wrap.appendChild(title);
 
-  const canvasSpeed = document.createElement("canvas");
-  canvasSpeed.height = 100;
-  wrap.appendChild(canvasSpeed);
-  const canvasDir = document.createElement("canvas");
-  canvasDir.height = 150;
-  wrap.appendChild(canvasDir);
+  const canvasSpeed = makeChartCanvas(wrap, CHART_HEIGHT_PX);
+  const canvasDir = makeChartCanvas(wrap, CHART_HEIGHT_PX);
 
   // Gemeinsame Zeitachse: Vereinigung aller vorkommenden Zeitpunkte (auf die Minute genau), sortiert
   const timeSet = new Set();
@@ -859,10 +1012,13 @@ function buildComparisonBlock(loc, entries) {
     plugins: [runVLinePlugin(runMarkers)],
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: { padding: { top: 4, right: 14, bottom: 0, left: 0 } },
       interaction: { mode: "index", intersect: false },
       scales: {
-        x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
-        y: { min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
+        x: xScaleOptions(),
+        y: { afterFit: fixedYWidth, min: 0, max: maxSpeed * 1.1, ticks: { color: "#94a3b8" }, grid: { color: "#2f3f5c" },
              title: { display: true, text: "m/s", color: "#94a3b8" } },
       },
       plugins: {
@@ -873,6 +1029,7 @@ function buildComparisonBlock(loc, entries) {
     }
   });
   wireResetOnDoubleClick(canvasSpeed, chartSpeedCmp);
+  registerChart(chartSpeedCmp, unionTimes, "speed");
 
   const chartDirCmp = new Chart(canvasDir, {
     type: "line",
@@ -880,10 +1037,13 @@ function buildComparisonBlock(loc, entries) {
     plugins: [sectorPlugin(loc.crit_dir_min, loc.crit_dir_max, "rgba(251,146,60,0.14)"), runVLinePlugin(runMarkers)],
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: { padding: { top: 4, right: 14, bottom: 0, left: 0 } },
       interaction: { mode: "index", intersect: false },
       scales: {
-        x: { type: "category", ticks: { color: "#94a3b8", autoSkip: true, maxTicksLimit: 12, maxRotation: 0 }, grid: { color: "#2f3f5c" } },
-        y: { min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
+        x: xScaleOptions(),
+        y: { afterFit: fixedYWidth, min: 0, max: 360, ticks: { color: "#94a3b8", stepSize: 90,
               callback: v => ({0:"N 0°",90:"O 90°",180:"S 180°",270:"W 270°",360:"N 360°"}[v] ?? v) },
              grid: { color: "#2f3f5c" } },
       },
@@ -895,6 +1055,7 @@ function buildComparisonBlock(loc, entries) {
     }
   });
   wireResetOnDoubleClick(canvasDir, chartDirCmp);
+  registerChart(chartDirCmp, unionTimes, "direction");
 
   const note = document.createElement("div");
   note.className = "footer-note";
@@ -917,6 +1078,12 @@ $("btnRun").addEventListener("click", async () => {
   $("resultsCard").style.display = "block";
   const results = $("results");
   results.innerHTML = "";
+
+  // Alte Chart-Instanzen eines vorherigen Laufs sauber entsorgen, damit
+  // weder Speicher noch die allCharts-Registrierung (für Sync-Zoom) tote
+  // Referenzen auf nicht mehr existierende Canvas-Elemente behält.
+  allCharts.forEach(c => c.destroy());
+  allCharts.length = 0;
 
   try {
     await ensureChartLoaded();
