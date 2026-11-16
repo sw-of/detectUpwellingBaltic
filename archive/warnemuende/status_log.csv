@@ -298,3 +298,5 @@ timestamp_utc,upwelling_predicted,net_wind_hours,details
 2026-11-15 23:32,Ja,38,"Event-Dauer: 38h (33h Wind aktiv (⌀: 5.0m/s, 203°)) von 2026-11-14 18:00 bis 2026-11-16 07:00 UTC"
 2026-11-15 23:32,Nein,0,"Kriterien im Prognosezeitraum nicht erfuellt"
 2026-11-16 07:21,Nein,0,"Kriterien im Prognosezeitraum nicht erfuellt"
+2026-11-16 17:30,Nein,0,"Kriterien im Prognosezeitraum nicht erfuellt"
+2026-11-16 17:30,Nein,0,"Kriterien im Prognosezeitraum nicht erfuellt"
